@@ -233,16 +233,18 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] SQLite checkpointer integration (`langgraph-checkpoint-sqlite`)
 - [x] Unit tests: 5 router tests + 1 full graph integration test (all passing)
 
-### Phase 3 — RAG Sub-Graph (Corrective RAG)
-- [ ] Qdrant Docker container setup
-- [ ] Document ingestion pipeline (chunking, embedding, upsert)
-- [ ] `retrieve` node — Qdrant similarity search
-- [ ] `grade_documents` node — LLM relevance scoring
-- [ ] `rewrite_query` node — query transformation
-- [ ] `web_search` node — Tavily API integration
-- [ ] `generate` node — answer synthesis with citations
-- [ ] Conditional edge logic (CRAG flow)
-- [ ] Integration test: full RAG loop
+### Phase 3 — RAG Sub-Graph (Corrective RAG) ✅ (Session 2)
+- [x] Qdrant Docker container setup (port 6333)
+- [x] Embedding utility (`all-MiniLM-L6-v2` via sentence-transformers, singleton)
+- [x] Qdrant client: `ensure_collection`, `ingest_documents`, `search_documents`
+- [x] `retrieve` node — Qdrant similarity search (top-5)
+- [x] `grade_documents` node — LLM relevance scoring with vector pre-filter
+- [x] `rewrite_query` node — LLM query transformation
+- [x] `web_search` node — DuckDuckGo fallback (free, no API key)
+- [x] `generate` node — answer synthesis with citations
+- [x] `decide_action` conditional edge (relevant → generate, ambiguous → rewrite, irrelevant → web)
+- [x] CRAG graph wired: retrieve → grade → decide → {generate | rewrite→retrieve | web→generate}
+- [x] 9 tests (4 unit + 2 web_search + 3 integration paths) — all passing
 
 ### Phase 4 — Code Sub-Graph (Generate-Execute-Verify)
 - [ ] Docker sandbox setup (execution environment)

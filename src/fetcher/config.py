@@ -9,6 +9,16 @@ OPENAI_MODEL_HEAVY = os.getenv("OPENAI_MODEL_HEAVY", "gpt-4o")
 
 SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "checkpoints.db")
 
+# Qdrant
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "fetcher_docs")
+
+# Embeddings
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 output dimension
+
+# Limits
 MAX_PLAN_ITERATIONS = 10
 MAX_RAG_REWRITES = 2
 RAG_RELEVANCE_THRESHOLD = 0.7

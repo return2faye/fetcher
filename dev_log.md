@@ -98,14 +98,52 @@ langgraph-checkpoint-sqlite 3.0.3
 pytest 9.0.2, pytest-asyncio 1.3.0
 ```
 
-### Next Steps (Session 3 — Phase 3: RAG Sub-Graph)
-1. Start Qdrant Docker container (`docker run qdrant/qdrant`)
-2. Build document ingestion pipeline: chunking → embed with `all-MiniLM-L6-v2` → upsert to Qdrant
-3. Implement `retrieve` node — Qdrant similarity search
-4. Implement `grade_documents` node — LLM relevance scoring
-5. Implement `decide_action` conditional edge (relevant / rewrite / web search)
-6. Implement `rewrite_query` node — LLM query transformation
-7. Implement `web_search` node — DuckDuckGo fallback
-8. Implement `generate` node — answer synthesis with citations
-9. Wire RAG sub-graph with CRAG conditional edges
-10. Integration test: full CRAG loop
+### Next Steps (Session 3 — Phase 3) ✅ DONE — see Session 3 below
+
+---
+
+## Session 3 — 2026-03-30
+
+### Status: Phase 3 Complete — Corrective RAG Sub-Graph
+
+### What was done
+- Started Qdrant Docker container (port 6333, named volume `qdrant_storage`)
+- Built embedding utility: `utils/embeddings.py` — lazy-loaded `all-MiniLM-L6-v2` singleton
+- Built Qdrant client: `utils/qdrant_client.py` — `ensure_collection`, `ingest_documents`, `search_documents`
+- Verified end-to-end: ingest 3 docs → search → correct top result (score 0.741)
+- Built all 6 RAG nodes in `nodes/rag.py`:
+  - `retrieve` — Qdrant top-5 similarity search
+  - `grade_documents` — LLM grades each doc with vector score pre-filter
+  - `decide_action` — conditional edge: relevant→generate, ambiguous→rewrite, irrelevant→web
+  - `rewrite_query` — LLM rewrites query for better retrieval
+  - `web_search` — DuckDuckGo fallback with error handling
+  - `generate` — LLM synthesizes answer with doc citations
+- Wired full CRAG sub-graph in `graphs/rag.py` with conditional edges and rewrite loop
+- 9 new tests (16 total), all passing:
+  - 4 `decide_action` unit tests (all routing paths)
+  - 2 `web_search` tests (success + failure handling)
+  - 3 integration tests (relevant path, irrelevant→web fallback, ambiguous→rewrite→relevant)
+
+### New Files
+```
+src/fetcher/utils/embeddings.py     # Local embedding model (all-MiniLM-L6-v2)
+src/fetcher/utils/qdrant_client.py  # Qdrant operations (ingest, search)
+src/fetcher/nodes/rag.py            # All 6 CRAG nodes
+src/fetcher/graphs/rag.py           # CRAG sub-graph wiring
+tests/test_rag.py                   # 9 tests
+```
+
+### Key Design Decisions (Session 3)
+1. **Vector score pre-filter in grading** — skip LLM grading for docs with score < 0.5 × threshold. Saves tokens.
+2. **Grading heuristic**: 2+ relevant docs = "relevant", 1 = "ambiguous", 0 = "irrelevant". Simple and effective.
+3. **DuckDuckGo `with` context manager** — clean resource handling, graceful fallback on network errors.
+4. **Embedding model singleton** — avoids reloading the 80MB model on every call.
+
+### Next Steps (Session 4 — Phase 4: Code Sub-Graph)
+1. Build Docker sandbox execution environment (Python image)
+2. Implement `coder` node — LLM generates code from task + context
+3. Implement `executor` node — run code in Docker container, capture stdout/stderr
+4. Implement `critic` node — LLM evaluates execution output
+5. Implement `error_handler` node — extract traceback, format retry feedback
+6. Wire self-correction loop with retry cap
+7. Integration test: generate → execute → verify cycle
