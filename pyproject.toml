@@ -1,0 +1,33 @@
+[project]
+name = "fetcher"
+version = "0.1.0"
+description = "Multi-Agent Research & Code Verification System"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-core",
+    "langchain-openai",
+    "langchain-community",
+    "sentence-transformers",
+    "duckduckgo-search",
+    "qdrant-client",
+    "docker",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

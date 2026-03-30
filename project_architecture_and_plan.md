@@ -218,20 +218,20 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 
 ## 6. Development Phases
 
-### Phase 1 — Project Scaffold & Core State ✅ (Session 1 — Design only)
+### Phase 1 — Project Scaffold & Core State ✅ (Session 1)
 - [x] System architecture design
 - [x] State schema definitions
 - [x] Node/edge specifications
 - [x] Development phase breakdown
-- [ ] Project scaffold (pyproject.toml, directory structure)
 
-### Phase 2 — Supervisor Graph & Routing
-- [ ] Implement `SupervisorState`
-- [ ] Build `intake_planner` node (query decomposition)
-- [ ] Build `router` node (conditional edges)
-- [ ] Wire supervisor graph with placeholder sub-graph nodes
-- [ ] SQLite checkpointer integration
-- [ ] Unit tests for routing logic
+### Phase 2 — Supervisor Graph & Routing ✅ (Session 2)
+- [x] Project scaffold (pyproject.toml, src/fetcher package, conda env)
+- [x] Implement `SupervisorState`, `RAGState`, `CodeState` in `state.py`
+- [x] Build `intake_planner` node (LLM query decomposition)
+- [x] Build `router` node (conditional edges by task_type)
+- [x] Wire supervisor graph with stub sub-graph nodes
+- [x] SQLite checkpointer integration (`langgraph-checkpoint-sqlite`)
+- [x] Unit tests: 5 router tests + 1 full graph integration test (all passing)
 
 ### Phase 3 — RAG Sub-Graph (Corrective RAG)
 - [ ] Qdrant Docker container setup
