@@ -1,0 +1,26 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: fetcher-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # Code execution sandbox — will be used in Phase 4
+  # sandbox:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.sandbox
+  #   container_name: fetcher-sandbox
+  #   network_mode: none          # No network access for security
+  #   mem_limit: 512m
+  #   cpus: 1.0
+  #   read_only: true
+  #   tmpfs:
+  #     - /tmp:size=100m
+
+volumes:
+  qdrant_data:
