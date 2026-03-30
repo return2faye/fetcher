@@ -18,19 +18,20 @@
 4. **SQLite checkpointer for dev** — zero-setup, sufficient for single-user dev. Postgres migration is a config change when needed.
 5. **Qdrant for vector DB** — runs in Docker alongside sandbox, good Python SDK, supports filtering.
 
-### Unresolved / Open Questions
-- [ ] Which LLM provider/model for agent reasoning? (Claude via `langchain-anthropic` assumed — confirm API key availability)
-- [ ] Embedding model choice: OpenAI `text-embedding-3-small` (paid) vs `nomic-embed-text` (local/free)?
-- [ ] Tavily API key — needed for Phase 3
-- [ ] Docker availability on host — needed for Phase 4
+### Resolved Questions (Session 1 follow-up)
+- [x] **LLM**: OpenAI (API key available) — use `langchain-openai`, models: `gpt-4o` / `gpt-4o-mini`
+- [x] **Embeddings**: Local `sentence-transformers` with `all-MiniLM-L6-v2` — free, no API key
+- [x] **Web search**: DuckDuckGo (`duckduckgo-search`) — free, no API key (replaces Tavily)
+- [x] **Docker**: Installed and available
 
 ### Dependencies (to install in Phase 2)
 ```
 langgraph >= 0.2
 langchain-core
-langchain-anthropic          # or langchain-openai
+langchain-openai
 langchain-community
-tavily-python
+sentence-transformers        # local embeddings (all-MiniLM-L6-v2)
+duckduckgo-search            # free web search fallback
 qdrant-client
 docker                       # Python Docker SDK
 ```

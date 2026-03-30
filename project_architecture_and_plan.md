@@ -156,7 +156,7 @@ human_review ──▶ finalize ──▶ END
 | `grade_documents`   | LLM scores each doc for relevance to query            |
 | `decide_action`     | Route: generate / rewrite query / web search fallback |
 | `rewrite_query`     | LLM rewrites query for better retrieval               |
-| `web_search`        | Tavily API fallback search                            |
+| `web_search`        | DuckDuckGo fallback search (free, no API key)         |
 | `generate`          | LLM generates answer from graded documents            |
 
 **Edges:**
@@ -198,7 +198,7 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 |-----------------|---------------------|----------------------------------------|
 | Short-term      | SQLite Checkpointer | Thread-level state, conversation turns  |
 | Long-term       | Qdrant (Docker)     | Embedded docs, past research results    |
-| Embedding model | `text-embedding-3-small` (OpenAI) or `nomic-embed-text` (local) | Document embeddings |
+| Embedding model | `all-MiniLM-L6-v2` (sentence-transformers, local) | Document embeddings — free, no API key |
 
 ---
 
@@ -207,8 +207,9 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 | Component       | Technology              | Notes                           |
 |-----------------|-------------------------|---------------------------------|
 | Sandbox         | Docker (local)          | Isolated code execution          |
-| Web search      | Tavily API              | CRAG fallback                    |
-| LLM             | Claude via LangChain    | All agent reasoning              |
+| Web search      | DuckDuckGo (`duckduckgo-search`) | Free, no API key needed |
+| LLM             | OpenAI via `langchain-openai` | GPT-4o / GPT-4o-mini          |
+| Embeddings      | `sentence-transformers` (`all-MiniLM-L6-v2`) | Local, free   |
 | Vector DB       | Qdrant (Docker)         | Long-term memory                 |
 | Checkpointer    | SQLite                  | Dev-friendly, swap to Postgres later |
 | Observability   | LangSmith (optional)    | Tracing, token tracking          |
