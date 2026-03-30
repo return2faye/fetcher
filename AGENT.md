@@ -1,7 +1,13 @@
 # Agent Context — Fetcher
 
-> This file exists so that any AI assistant (including future me) can pick up this project
-> mid-stream and understand what is happening, what has been built, and what to do next.
+> **Who is this for?** You — the AI agent working on this project. This file tells you
+> who you are, what the project is, what has been built, and what to do next.
+>
+> **This is not the place for reasoning.** If you are making a design decision, evaluating
+> trade-offs, or choosing between alternatives — write that in `docs/design_rationale.md`.
+> That file is a shared thinking space: it helps the user understand your reasoning, and
+> it helps you revisit and challenge your own past decisions. Keep this file operational;
+> keep that file analytical.
 
 ## What is this project?
 
@@ -117,5 +123,18 @@ later the code sandbox). See `docker/docker-compose.yml` for the full stack defi
 The user expects incremental development across sessions. At the end of every session:
 1. Update `project_architecture_and_plan.md` — check off completed items
 2. Update `dev_log.md` — add a new session entry with what was done, decisions, next steps
-3. Commit with a descriptive message
-4. All tests must pass before committing
+3. Update `docs/design_rationale.md` — add a new section for every non-trivial design
+   decision made during the session. Explain what you chose, what you rejected, and why.
+   This is not optional. The user reads this to understand your thinking, and you read it
+   to check whether past decisions still hold.
+4. Commit with a descriptive message
+5. All tests must pass before committing
+
+## Key files and their purposes
+
+| File | Purpose | Who reads it |
+|------|---------|-------------|
+| `AGENT.md` (this file) | Operational context: what exists, what to do next | Agent |
+| `docs/design_rationale.md` | Analytical: why each decision was made, trade-offs, things to revisit | Agent + User |
+| `project_architecture_and_plan.md` | Phase checklist and architecture spec | Agent + User |
+| `dev_log.md` | Session-by-session progress log | Agent + User |
