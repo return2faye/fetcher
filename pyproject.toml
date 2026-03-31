@@ -5,6 +5,7 @@ description = "Multi-Agent Research & Code Verification System"
 requires-python = ">=3.11"
 dependencies = [
     "langgraph>=1.0",
+    "langgraph-checkpoint-sqlite",
     "langchain-core",
     "langchain-openai",
     "langchain-community",
