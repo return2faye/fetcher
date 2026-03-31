@@ -5,14 +5,17 @@ import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
-from fetcher.config import OPENAI_MODEL, OPENAI_MODEL_HEAVY, MAX_CODE_RETRIES
+from fetcher.config import (
+    OPENAI_MODEL, OPENAI_MODEL_HEAVY, MAX_CODE_RETRIES,
+    LLM_TIMEOUT, DOCKER_EXEC_TIMEOUT,
+)
 from fetcher.state import CodeState
 from fetcher.utils.docker_sandbox import execute_in_sandbox
 
 
 def _get_llm(heavy: bool = False) -> ChatOpenAI:
     model = OPENAI_MODEL_HEAVY if heavy else OPENAI_MODEL
-    return ChatOpenAI(model=model, temperature=0)
+    return ChatOpenAI(model=model, temperature=0, timeout=LLM_TIMEOUT)
 
 
 # --- Node: coder ---
@@ -77,14 +80,21 @@ def coder(state: CodeState) -> dict:
             ),
         ]
 
-    response = llm.invoke(messages)
-    code = _extract_code_block(response.content)
+    try:
+        response = llm.invoke(messages)
+        code = _extract_code_block(response.content)
+    except Exception:
+        # LLM failed — return empty code so executor reports the error cleanly
+        code = ""
+        response = None
 
-    return {
+    result = {
         "generated_code": code,
         "language": "python",
-        "messages": [response],
     }
+    if response:
+        result["messages"] = [response]
+    return result
 
 
 # --- Node: executor ---
@@ -101,7 +111,7 @@ def executor(state: CodeState) -> dict:
             "exit_code": 1,
         }
 
-    result = execute_in_sandbox(code, language=language)
+    result = execute_in_sandbox(code, language=language, timeout=DOCKER_EXEC_TIMEOUT)
 
     return {
         "execution_result": result["stdout"],
@@ -142,7 +152,16 @@ def critic(state: CodeState) -> dict:
             f"Output:\n{state.get('execution_result', '(no output)')}"
         ),
     ]
-    response = llm.invoke(messages)
+
+    try:
+        response = llm.invoke(messages)
+    except Exception:
+        # If critic LLM fails, optimistically pass (code ran successfully)
+        return {
+            "is_verified": True,
+            "verified_output": state.get("execution_result", ""),
+            "critic_feedback": None,
+        }
 
     try:
         parsed = json.loads(response.content)

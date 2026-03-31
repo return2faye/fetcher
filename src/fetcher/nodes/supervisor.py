@@ -4,7 +4,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.types import interrupt, Command
 
-from fetcher.config import OPENAI_MODEL, OPENAI_MODEL_HEAVY, MAX_PLAN_ITERATIONS
+from fetcher.config import (
+    OPENAI_MODEL, OPENAI_MODEL_HEAVY, MAX_PLAN_ITERATIONS,
+    LLM_TIMEOUT, MAX_QUERY_LENGTH,
+)
 from fetcher.state import SupervisorState
 
 PLANNER_SYSTEM_PROMPT = """\
@@ -27,26 +30,76 @@ Rules:
 
 def get_llm(heavy: bool = False) -> ChatOpenAI:
     model = OPENAI_MODEL_HEAVY if heavy else OPENAI_MODEL
-    return ChatOpenAI(model=model, temperature=0)
+    return ChatOpenAI(model=model, temperature=0, timeout=LLM_TIMEOUT)
 
 
 def intake_planner(state: SupervisorState) -> dict:
     """Decompose the user query into a plan of typed sub-tasks."""
     import json
 
+    query = state.get("user_query", "").strip()
+
+    # Input validation
+    if not query:
+        return {
+            "messages": [],
+            "plan": [],
+            "current_task_index": 0,
+            "task_type": "done",
+            "research_results": [],
+            "code_results": [],
+            "iteration_count": 0,
+            "max_iterations": MAX_PLAN_ITERATIONS,
+            "needs_human_approval": False,
+            "human_feedback": None,
+            "final_answer": "No query provided.",
+        }
+
+    if len(query) > MAX_QUERY_LENGTH:
+        query = query[:MAX_QUERY_LENGTH]
+
     llm = get_llm()
     messages = [
         SystemMessage(content=PLANNER_SYSTEM_PROMPT),
-        HumanMessage(content=state["user_query"]),
+        HumanMessage(content=query),
     ]
-    response = llm.invoke(messages)
+
+    try:
+        response = llm.invoke(messages)
+    except Exception:
+        # LLM call failed — fallback to single research task
+        tasks = [{"description": query, "type": "research"}]
+        return {
+            "messages": [],
+            "plan": [f"[{t['type']}] {t['description']}" for t in tasks],
+            "current_task_index": 0,
+            "task_type": tasks[0]["type"],
+            "research_results": [],
+            "code_results": [],
+            "iteration_count": 0,
+            "max_iterations": MAX_PLAN_ITERATIONS,
+            "needs_human_approval": False,
+            "human_feedback": None,
+            "final_answer": "",
+        }
 
     try:
         parsed = json.loads(response.content)
+        if not isinstance(parsed, dict):
+            raise ValueError("Response is not a JSON object")
         tasks = parsed["tasks"]
-    except (json.JSONDecodeError, KeyError):
+        if not isinstance(tasks, list) or not tasks:
+            raise ValueError("No tasks in response")
+        # Validate each task has required fields with valid types
+        valid_types = {"research", "code", "hybrid"}
+        for t in tasks:
+            if not isinstance(t, dict) or "description" not in t or "type" not in t:
+                raise ValueError("Invalid task structure")
+            if t["type"] not in valid_types:
+                t["type"] = "research"
+    except (json.JSONDecodeError, KeyError, ValueError):
         # Fallback: treat entire query as a single research task
-        tasks = [{"description": state["user_query"], "type": "research"}]
+        tasks = [{"description": query, "type": "research"}]
 
     plan = [f"[{t['type']}] {t['description']}" for t in tasks]
     first_type = tasks[0]["type"] if tasks else "done"
@@ -161,11 +214,19 @@ def synthesizer(state: SupervisorState) -> dict:
             f"Sub-task results:\n{context}"
         ),
     ]
-    response = llm.invoke(messages)
+
+    try:
+        response = llm.invoke(messages)
+        answer = response.content
+    except Exception:
+        # If synthesis LLM fails, return raw sub-results
+        answer = f"(Synthesis failed — raw results below)\n\n{context}"
+        from langchain_core.messages import AIMessage
+        response = AIMessage(content=answer)
 
     return {
         "messages": [response],
-        "final_answer": response.content,
+        "final_answer": answer,
         "needs_human_approval": True,
     }
 
@@ -238,11 +299,19 @@ def revise_synthesis(state: SupervisorState) -> dict:
             )
         ),
     ]
-    response = llm.invoke(messages)
+
+    try:
+        response = llm.invoke(messages)
+        answer = response.content
+    except Exception:
+        # If revision LLM fails, keep the previous answer
+        answer = state.get("final_answer", "")
+        from langchain_core.messages import AIMessage
+        response = AIMessage(content=f"(Revision failed — keeping previous answer)\n\n{answer}")
 
     return {
         "messages": [response],
-        "final_answer": response.content,
+        "final_answer": answer,
         "needs_human_approval": True,
         "human_feedback": None,
     }

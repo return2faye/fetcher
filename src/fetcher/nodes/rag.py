@@ -8,13 +8,14 @@ from fetcher.config import (
     OPENAI_MODEL,
     RAG_RELEVANCE_THRESHOLD,
     MAX_RAG_REWRITES,
+    LLM_TIMEOUT,
 )
 from fetcher.state import RAGState
 from fetcher.utils.qdrant_client import search_documents
 
 
 def _get_llm() -> ChatOpenAI:
-    return ChatOpenAI(model=OPENAI_MODEL, temperature=0)
+    return ChatOpenAI(model=OPENAI_MODEL, temperature=0, timeout=LLM_TIMEOUT)
 
 
 # --- Node: retrieve ---
@@ -70,15 +71,20 @@ def grade_documents(state: RAGState) -> dict:
             SystemMessage(content=GRADER_SYSTEM_PROMPT),
             HumanMessage(content=f"Query: {query}\n\nDocument: {doc['text']}"),
         ]
-        response = llm.invoke(messages)
 
         try:
+            response = llm.invoke(messages)
             parsed = json.loads(response.content)
             if parsed.get("relevant", False):
                 graded_docs.append(doc)
                 graded_scores.append(score)
         except (json.JSONDecodeError, KeyError):
             # If parse fails, include doc if vector score is high enough
+            if score >= threshold:
+                graded_docs.append(doc)
+                graded_scores.append(score)
+        except Exception:
+            # LLM call failed — fall back to vector score
             if score >= threshold:
                 graded_docs.append(doc)
                 graded_scores.append(score)
@@ -137,14 +143,22 @@ def rewrite_query(state: RAGState) -> dict:
             f"This query returned insufficient results. Please rewrite it."
         ),
     ]
-    response = llm.invoke(messages)
-    new_query = response.content.strip()
 
-    return {
+    try:
+        response = llm.invoke(messages)
+        new_query = response.content.strip()
+    except Exception:
+        # If rewrite fails, use original query
+        new_query = state["original_query"]
+        response = None
+
+    result = {
         "query": new_query,
         "rewrite_count": state.get("rewrite_count", 0) + 1,
-        "messages": [response],
     }
+    if response:
+        result["messages"] = [response]
+    return result
 
 
 # --- Node: web_search ---
@@ -201,15 +215,23 @@ def generate(state: RAGState) -> dict:
             content=f"Query: {state['query']}\n\nDocuments:\n{doc_text}"
         ),
     ]
-    response = llm.invoke(messages)
 
     citations = [
         d.get("metadata", {}).get("source", f"doc_{i}")
         for i, d in enumerate(documents)
     ]
 
-    return {
-        "generation": response.content,
-        "citations": citations,
-        "messages": [response],
-    }
+    try:
+        response = llm.invoke(messages)
+        return {
+            "generation": response.content,
+            "citations": citations,
+            "messages": [response],
+        }
+    except Exception:
+        # If generation fails, return raw documents as the answer
+        fallback = f"(Generation failed — raw documents for: {state['query']})\n\n{doc_text}"
+        return {
+            "generation": fallback,
+            "citations": citations,
+        }

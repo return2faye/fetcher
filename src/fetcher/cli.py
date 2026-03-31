@@ -1,12 +1,12 @@
 """CLI runner for Fetcher — interactive query interface with HITL and streaming."""
 
+import argparse
 import asyncio
 import sys
 import uuid
 
-from fetcher.config import LANGSMITH_TRACING_ENABLED
+from fetcher.config import LANGSMITH_TRACING_ENABLED, MAX_QUERY_LENGTH
 from fetcher.graphs.supervisor import build_supervisor_graph
-from fetcher.state import SupervisorState
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from fetcher.config import SQLITE_DB_PATH
@@ -34,11 +34,23 @@ def _get_human_feedback(final_answer: str) -> str:
     print(final_answer)
     print("\n--- Human Review ---")
     print("Options:")
-    print("  [Enter]          → Approve")
-    print("  reject:<reason>  → Reject and re-plan")
-    print("  <your feedback>  → Revise with instructions")
-    feedback = input("\nYour feedback: ").strip()
+    print("  [Enter]          -> Approve")
+    print("  reject:<reason>  -> Reject and re-plan")
+    print("  <your feedback>  -> Revise with instructions")
+    try:
+        feedback = input("\nYour feedback: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nApproved (non-interactive).")
+        feedback = "approve"
     return feedback
+
+
+def _print_final(answer: str):
+    print("\n" + "=" * 60)
+    print("FINAL ANSWER:")
+    print("=" * 60)
+    print(answer or "(no answer)")
+    print()
 
 
 async def run_streaming(query: str):
@@ -60,22 +72,29 @@ async def run_streaming(query: str):
     while True:
         # Stream events from the graph
         current_node = None
-        async for event in app.astream_events(initial_state, config=config, version="v2"):
-            kind = event.get("event", "")
+        try:
+            async for event in app.astream_events(initial_state, config=config, version="v2"):
+                kind = event.get("event", "")
 
-            # Track which node is executing
-            if kind == "on_chain_start" and event.get("name"):
-                node_name = event["name"]
-                if node_name not in ("LangGraph", "__start__") and ":" not in node_name:
-                    if node_name != current_node:
-                        current_node = node_name
-                        print(f"\n  [{current_node}] ", end="", flush=True)
+                # Track which node is executing
+                if kind == "on_chain_start" and event.get("name"):
+                    node_name = event["name"]
+                    if node_name not in ("LangGraph", "__start__") and ":" not in node_name:
+                        if node_name != current_node:
+                            current_node = node_name
+                            print(f"\n  [{current_node}] ", end="", flush=True)
 
-            # Stream LLM tokens
-            if kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                if chunk and hasattr(chunk, "content") and chunk.content:
-                    print(chunk.content, end="", flush=True)
+                # Stream LLM tokens
+                if kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content") and chunk.content:
+                        print(chunk.content, end="", flush=True)
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user.")
+            return
+        except Exception as e:
+            print(f"\n\nError during execution: {e}")
+            return
 
         print()  # Newline after streaming
 
@@ -98,11 +117,7 @@ async def run_streaming(query: str):
         else:
             # Graph completed
             final_state = state.values
-            print("\n" + "=" * 60)
-            print("FINAL ANSWER:")
-            print("=" * 60)
-            print(final_state.get("final_answer", "(no answer)"))
-            print()
+            _print_final(final_state.get("final_answer", ""))
             break
 
 
@@ -123,7 +138,14 @@ def run_sync(query: str):
     print(f"\nProcessing: {query}\n")
 
     while True:
-        result = app.invoke(initial_input, config=config)
+        try:
+            result = app.invoke(initial_input, config=config)
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user.")
+            return
+        except Exception as e:
+            print(f"\nError during execution: {e}")
+            return
 
         # Check if graph is interrupted
         state = app.get_state(config)
@@ -139,30 +161,46 @@ def run_sync(query: str):
             from langgraph.types import Command
             initial_input = Command(resume=feedback)
         else:
-            print("\n" + "=" * 60)
-            print("FINAL ANSWER:")
-            print("=" * 60)
-            print(result.get("final_answer", "(no answer)"))
-            print()
+            _print_final(result.get("final_answer", ""))
             break
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        prog="fetcher",
+        description="Fetcher — Multi-agent research & code verification system",
+    )
+    parser.add_argument(
+        "query",
+        nargs="*",
+        help="The query to process. If omitted, prompts interactively.",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Enable token-level streaming output",
+    )
+    args = parser.parse_args()
+
     _print_header()
 
-    # Parse args
-    streaming = "--stream" in sys.argv
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-
-    if args:
-        query = " ".join(args)
+    if args.query:
+        query = " ".join(args.query)
     else:
-        query = input("Enter your query: ").strip()
+        try:
+            query = input("Enter your query: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting.")
+            return
         if not query:
             print("No query provided. Exiting.")
             return
 
-    if streaming:
+    if len(query) > MAX_QUERY_LENGTH:
+        print(f"Query truncated to {MAX_QUERY_LENGTH} characters.")
+        query = query[:MAX_QUERY_LENGTH]
+
+    if args.stream:
         asyncio.run(run_streaming(query))
     else:
         run_sync(query)

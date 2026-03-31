@@ -53,19 +53,24 @@ def rag_node(state: SupervisorState) -> dict:
     if past_context:
         query = f"{task_desc}\n\nRelevant prior knowledge:\n{past_context}"
 
-    # Invoke RAG sub-graph
-    rag_state = create_rag_initial_state(query)
-    result = _get_rag_app().invoke(rag_state)
+    try:
+        # Invoke RAG sub-graph
+        rag_state = create_rag_initial_state(query)
+        result = _get_rag_app().invoke(rag_state)
 
-    # Extract result
-    generation = result.get("generation", "")
-    citations = result.get("citations", [])
+        generation = result.get("generation", "")
+        citations = result.get("citations", [])
+        used_web = result.get("use_web_search", False)
+    except Exception as e:
+        generation = f"(RAG sub-graph failed: {e})"
+        citations = []
+        used_web = False
 
     research_result = {
         "task": task_desc,
         "answer": generation,
         "citations": citations,
-        "used_web_search": result.get("use_web_search", False),
+        "used_web_search": used_web,
     }
 
     # Store in long-term memory for future recall
@@ -88,20 +93,29 @@ def code_node(state: SupervisorState) -> dict:
         context_parts.append(r.get("answer", ""))
     context = "\n\n".join(context_parts)
 
-    # Invoke Code sub-graph
-    code_state = create_code_initial_state(task_desc, context=context)
-    result = _get_code_app().invoke(code_state)
+    try:
+        # Invoke Code sub-graph
+        code_state = create_code_initial_state(task_desc, context=context)
+        result = _get_code_app().invoke(code_state)
 
-    code_result = {
-        "task": task_desc,
-        "output": result.get("verified_output", result.get("execution_result", "")),
-        "code": result.get("generated_code", ""),
-        "is_verified": result.get("is_verified", False),
-        "retries": result.get("retry_count", 0),
-    }
+        code_result = {
+            "task": task_desc,
+            "output": result.get("verified_output", result.get("execution_result", "")),
+            "code": result.get("generated_code", ""),
+            "is_verified": result.get("is_verified", False),
+            "retries": result.get("retry_count", 0),
+        }
+    except Exception as e:
+        code_result = {
+            "task": task_desc,
+            "output": f"(Code sub-graph failed: {e})",
+            "code": "",
+            "is_verified": False,
+            "retries": 0,
+        }
 
     # Store in long-term memory
-    output_text = f"Code: {result.get('generated_code', '')}\nOutput: {code_result['output']}"
+    output_text = f"Code: {code_result['code']}\nOutput: {code_result['output']}"
     store_result(task_desc, output_text, result_type="code")
 
     return {
@@ -121,17 +135,23 @@ def hybrid_node(state: SupervisorState) -> dict:
     if past_context:
         query = f"{task_desc}\n\nRelevant prior knowledge:\n{past_context}"
 
-    rag_state = create_rag_initial_state(query)
-    rag_result = _get_rag_app().invoke(rag_state)
+    try:
+        rag_state = create_rag_initial_state(query)
+        rag_result = _get_rag_app().invoke(rag_state)
 
-    generation = rag_result.get("generation", "")
-    citations = rag_result.get("citations", [])
+        generation = rag_result.get("generation", "")
+        citations = rag_result.get("citations", [])
+        used_web = rag_result.get("use_web_search", False)
+    except Exception as e:
+        generation = f"(RAG sub-graph failed: {e})"
+        citations = []
+        used_web = False
 
     research_result = {
         "task": task_desc,
         "answer": generation,
         "citations": citations,
-        "used_web_search": rag_result.get("use_web_search", False),
+        "used_web_search": used_web,
     }
 
     store_result(task_desc, generation, result_type="research")
@@ -140,18 +160,27 @@ def hybrid_node(state: SupervisorState) -> dict:
     all_research = state.get("research_results", []) + [research_result]
     context = "\n\n".join(r.get("answer", "") for r in all_research)
 
-    code_state = create_code_initial_state(task_desc, context=context)
-    code_result_raw = _get_code_app().invoke(code_state)
+    try:
+        code_state = create_code_initial_state(task_desc, context=context)
+        code_result_raw = _get_code_app().invoke(code_state)
 
-    code_result = {
-        "task": task_desc,
-        "output": code_result_raw.get("verified_output", code_result_raw.get("execution_result", "")),
-        "code": code_result_raw.get("generated_code", ""),
-        "is_verified": code_result_raw.get("is_verified", False),
-        "retries": code_result_raw.get("retry_count", 0),
-    }
+        code_result = {
+            "task": task_desc,
+            "output": code_result_raw.get("verified_output", code_result_raw.get("execution_result", "")),
+            "code": code_result_raw.get("generated_code", ""),
+            "is_verified": code_result_raw.get("is_verified", False),
+            "retries": code_result_raw.get("retry_count", 0),
+        }
+    except Exception as e:
+        code_result = {
+            "task": task_desc,
+            "output": f"(Code sub-graph failed: {e})",
+            "code": "",
+            "is_verified": False,
+            "retries": 0,
+        }
 
-    output_text = f"Code: {code_result_raw.get('generated_code', '')}\nOutput: {code_result['output']}"
+    output_text = f"Code: {code_result['code']}\nOutput: {code_result['output']}"
     store_result(task_desc, output_text, result_type="code")
 
     return {

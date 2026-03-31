@@ -24,6 +24,13 @@ MAX_RAG_REWRITES = 2
 RAG_RELEVANCE_THRESHOLD = 0.7
 MAX_CODE_RETRIES = 3
 
+# Timeouts (seconds)
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))
+DOCKER_EXEC_TIMEOUT = int(os.getenv("DOCKER_EXEC_TIMEOUT", "30"))
+
+# Query limits
+MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "10000"))
+
 # LangSmith tracing (opt-in via env vars)
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
 LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "fetcher")

@@ -551,6 +551,38 @@ missing.
 
 ---
 
+## 20. Error Handling: Graceful Degradation Over Hard Failure
+
+### The principle
+Every external call (LLM, Docker, Qdrant) can fail. When it does, the system should
+produce *something usable* rather than crash. The user gets a lower-quality result, but
+they get a result.
+
+### Why not retry?
+Retries add latency and complexity. For transient errors (network blips), the self-correction
+loops already handle retries at a higher level (CRAG rewrites, code retry loop). Adding
+per-call retries would slow the happy path for marginal reliability gains.
+
+### Specific fallback strategy
+
+| Component | Fallback | Rationale |
+|-----------|----------|-----------|
+| Planner LLM | Single research task | Conservative: research everything, code nothing |
+| Synthesizer LLM | Raw sub-results | User sees what was gathered, can judge quality |
+| Coder LLM | Empty code | Executor reports "No code to execute" → clean error flow |
+| Critic LLM | Optimistic pass | Code ran successfully; infrastructure failure shouldn't penalize |
+| Grader LLM (per-doc) | Fall back to vector score | High vector score ≈ relevant; skip the doc only if score is low |
+| Rewrite LLM | Use original query | Better to re-search with the same query than crash |
+| Generate LLM | Raw documents | User sees sources, can synthesize manually |
+| Sub-graph crash | Error message, advance task | One failed task shouldn't block the plan |
+
+### Why exit code 124 for sandbox timeouts?
+Convention. The Unix `timeout` command uses exit code 124. Any tooling that checks for
+timeouts will recognize this code. It also distinguishes timeout (124) from execution
+error (non-zero) and success (0).
+
+---
+
 ## Decisions I Would Revisit
 
 These are choices that are correct *for now* but may need to change:

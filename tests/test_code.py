@@ -158,7 +158,7 @@ def test_code_graph_self_correction():
 
     exec_count = {"n": 0}
 
-    def mock_exec(code, language="python"):
+    def mock_exec(code, language="python", timeout=30):
         exec_count["n"] += 1
         if exec_count["n"] == 1:
             return {"stdout": "", "stderr": "NameError: name 'undefined_var' is not defined", "exit_code": 1}
@@ -192,7 +192,7 @@ def test_code_graph_retries_exhausted():
     def mock_llm_invoke(messages):
         return AIMessage(content="```python\nraise Exception('always fails')\n```")
 
-    def mock_exec(code, language="python"):
+    def mock_exec(code, language="python", timeout=30):
         return {"stdout": "", "stderr": "Exception: always fails", "exit_code": 1}
 
     graph = build_code_graph()

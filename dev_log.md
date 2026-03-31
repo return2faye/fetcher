@@ -265,9 +265,58 @@ src/fetcher/graphs/supervisor.py # Conditional edges for HITL, revise_synthesis 
 4. **LangSmith via env-var gating** — no code changes needed to enable tracing. Just set `LANGSMITH_API_KEY`. The `setdefault` calls ensure we don't override user's explicit settings.
 5. **CLI dual mode** — sync mode is simpler and works for debugging. Streaming mode (`--stream`) gives real-time token output for a better UX. Both support HITL interrupt/resume.
 
-### Next Steps (Session 7 — Phase 7: Hardening & Polish)
-1. Error handling and graceful degradation across all nodes
-2. Timeout handling for LLM calls and Docker execution
-3. Input validation on user queries
-4. CLI polish: `--help`, progress indicators, better error messages
-5. Document ingestion pipeline (chunking strategy)
+### Next Steps (Session 7 — Phase 7: Hardening & Polish) ✅ DONE — see Session 7 below
+
+---
+
+## Session 7 — 2026-03-31
+
+### Status: Phase 7 Complete — Hardening & Polish
+
+### What was done
+- **Docker sandbox timeout**: Wrapped `exec_run` in `ThreadPoolExecutor` with configurable timeout. Returns exit code 124 on timeout (matching Unix `timeout` convention). Also added graceful handling for Docker daemon unavailability.
+- **LLM timeout**: All `ChatOpenAI` instances now pass `timeout=LLM_TIMEOUT` (default 60s, configurable via env var). Applied across supervisor, RAG, and code nodes.
+- **LLM error handling**: Every `llm.invoke()` call is now wrapped in try/except with meaningful fallbacks:
+  - `intake_planner`: falls back to single research task
+  - `synthesizer`: returns raw sub-results with "(Synthesis failed)" prefix
+  - `revise_synthesis`: keeps previous answer
+  - `coder`: returns empty code (executor reports the error)
+  - `critic`: optimistic pass (code ran successfully, just can't verify)
+  - `grade_documents`: falls back to vector score for individual doc grading
+  - `rewrite_query`: returns original query
+  - `generate`: returns raw documents
+- **Sub-graph error handling**: `rag_node`, `code_node`, `hybrid_node` in integration.py catch sub-graph failures and return error messages — tasks always advance.
+- **Input validation**: Empty/whitespace queries handled, query length truncated to `MAX_QUERY_LENGTH` (10000), task type normalization (unknown → research), robust JSON parsing (validates dict, list, task structure).
+- **CLI polish**: Switched to `argparse` with proper `--help`, `KeyboardInterrupt`/`EOFError` handling, error messages on graph execution failures.
+- **Config additions**: `LLM_TIMEOUT`, `DOCKER_EXEC_TIMEOUT`, `MAX_QUERY_LENGTH` — all env-var configurable.
+- 19 new tests (66 total), all passing.
+
+### New Files
+```
+tests/test_hardening.py        # 19 tests for error handling and validation
+```
+
+### Modified Files
+```
+src/fetcher/config.py          # Added LLM_TIMEOUT, DOCKER_EXEC_TIMEOUT, MAX_QUERY_LENGTH
+src/fetcher/utils/docker_sandbox.py  # Thread-based timeout, Docker unavailability handling
+src/fetcher/nodes/supervisor.py      # LLM timeout, error handling, input validation
+src/fetcher/nodes/rag.py             # LLM timeout, error handling on all nodes
+src/fetcher/nodes/code.py            # LLM timeout, error handling, Docker timeout passthrough
+src/fetcher/nodes/integration.py     # Sub-graph error handling
+src/fetcher/cli.py                   # argparse, KeyboardInterrupt handling
+tests/test_code.py                   # Updated mock_exec signatures for timeout param
+```
+
+### Key Design Decisions (Session 7)
+1. **Thread-based Docker timeout** — Docker SDK's `exec_run` has no timeout param. Used `ThreadPoolExecutor` with `future.result(timeout=N)`. Exit code 124 matches the Unix `timeout` command convention, making it easy to identify timeout failures.
+2. **Graceful degradation over hard failure** — Every LLM call has a fallback that produces *something usable*. The system degrades in quality but never crashes. Example: if the synthesizer fails, the user still sees the raw research/code results.
+3. **Optimistic critic on failure** — If the critic LLM is unreachable but code ran successfully (exit_code=0), we optimistically pass. The alternative (failing the whole code task) penalizes the user for an infrastructure issue unrelated to their code.
+4. **Tasks always advance** — Sub-graph failures in integration.py produce error messages but still increment `current_task_index`. This prevents a single failed task from blocking the entire plan.
+
+### Future Work
+1. Document ingestion pipeline (chunking for PDFs, web pages)
+2. Adaptive retrieval (variable top-k based on query complexity)
+3. Expand sandbox packages or add dynamic pip install
+4. Multi-user support (Postgres checkpointer)
+5. Web UI or API server

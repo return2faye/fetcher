@@ -76,7 +76,8 @@ tests/
 ├── test_rag.py                # 9 tests (decide_action + web_search + 3 CRAG paths)
 ├── test_code.py               # 13 tests (helpers + routing + sandbox + integration)
 ├── test_integration.py        # 9 tests (end-to-end with real sub-graphs + memory)
-└── test_hitl.py               # 9 tests (HITL routing, feedback, interrupt/resume flows)
+├── test_hitl.py               # 9 tests (HITL routing, feedback, interrupt/resume flows)
+└── test_hardening.py          # 19 tests (error handling, timeouts, input validation)
 ```
 
 ## Current state of development
@@ -89,9 +90,9 @@ tests/
 | 4     | Code generation & Docker sandbox | Done    |
 | 5     | Integration & memory             | Done    |
 | 6     | HITL, streaming & observability  | Done    |
-| 7     | Hardening & polish               | **Next** |
+| 7     | Hardening & polish               | Done    |
 
-**47 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
+**66 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
 
 ## How the graphs work
 
@@ -129,16 +130,15 @@ task → coder (LLM generates Python)
       - retries exhausted → END (is_verified=False)
 ```
 
-## What to do next (Phase 7)
+## What to do next (future work)
 
-Hardening and polish:
-1. Error handling and graceful degradation across all nodes
-2. Iteration safety caps enforcement and edge-case testing
-3. Input validation on user queries (length, content)
-4. Timeout handling for LLM calls and Docker execution
-5. Comprehensive end-to-end testing with realistic scenarios
-6. CLI polish: better error messages, `--help` flag, progress indicators
-7. Document ingestion pipeline (chunking strategy for PDFs, web pages)
+Potential improvements:
+1. Document ingestion pipeline (chunking strategy for PDFs, web pages)
+2. Adaptive retrieval (variable top-k based on query complexity)
+3. Expand sandbox packages or add dynamic `pip install`
+4. Multi-user support (Postgres checkpointer, auth)
+5. Web UI or API server for non-CLI access
+6. Selective context: embed task descriptions and pick most relevant research for each code task
 
 ## Container management
 

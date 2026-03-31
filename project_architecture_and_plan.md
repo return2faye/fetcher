@@ -283,9 +283,13 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] CLI runner (`src/fetcher/cli.py`): sync mode + streaming mode (`--stream`)
 - [x] 9 new tests (47 total): 4 unit + 3 HITL interrupt/resume integration + 1 revision + 1 LangSmith config
 
-### Phase 7 — Hardening & Polish
-- [ ] Error handling and graceful degradation
-- [ ] Iteration safety caps enforcement
-- [ ] Comprehensive integration tests
-- [ ] Docker Compose for full stack (Qdrant + sandbox)
-- [ ] README with setup and usage instructions
+### Phase 7 — Hardening & Polish ✅ (Session 6)
+- [x] LLM timeout configuration (`LLM_TIMEOUT` env var, applied to all ChatOpenAI instances)
+- [x] Docker sandbox timeout enforcement (thread-based with `concurrent.futures`, exit code 124)
+- [x] Error handling on all LLM invoke() calls — graceful fallbacks (raw results, optimistic pass, etc.)
+- [x] Error handling on sub-graph invocations in integration.py — tasks advance on failure
+- [x] Input validation: empty/whitespace queries, query length truncation, task type normalization
+- [x] Robust JSON parsing: validates response is dict, tasks is list, task structure is valid
+- [x] Docker daemon unavailability handled gracefully
+- [x] CLI: argparse with `--help`, `KeyboardInterrupt` handling, `EOFError` handling
+- [x] 19 new tests (66 total): input validation, LLM failure fallbacks, timeout, Docker errors
