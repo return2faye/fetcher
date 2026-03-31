@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+# Common data science / utility packages pre-installed
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    requests \
+    matplotlib
+
+# Non-root user for security
+RUN useradd -m -s /bin/bash sandbox
+USER sandbox
+WORKDIR /home/sandbox
+
+# Default: sleep forever (container stays alive, we exec into it)
+CMD ["sleep", "infinity"]

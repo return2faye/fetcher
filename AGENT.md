@@ -50,16 +50,27 @@ src/fetcher/
 ├── state.py                   # 3 TypedDict schemas: SupervisorState, RAGState, CodeState
 ├── graphs/
 │   ├── supervisor.py          # Top-level graph: plan → route → sub-graphs → synthesize
-│   └── rag.py                 # CRAG sub-graph: retrieve → grade → decide → generate
+│   ├── rag.py                 # CRAG sub-graph: retrieve → grade → decide → generate
+│   └── code.py                # Code sub-graph: coder → executor → critic → retry
 ├── nodes/
 │   ├── supervisor.py          # intake_planner, router, stubs, synthesizer, finalize
-│   └── rag.py                 # retrieve, grade_documents, rewrite_query, web_search, generate
+│   ├── rag.py                 # retrieve, grade_documents, rewrite_query, web_search, generate
+│   └── code.py                # coder, executor, critic, error_handler
 └── utils/
     ├── embeddings.py          # Singleton embedding model, embed_texts(), embed_query()
-    └── qdrant_client.py       # Qdrant ops: ensure_collection, ingest, search
+    ├── qdrant_client.py       # Qdrant ops: ensure_collection, ingest, search
+    └── docker_sandbox.py      # Docker exec wrapper for code execution
+docker/
+├── docker-compose.yml         # Qdrant + sandbox containers
+└── Dockerfile.sandbox         # Python 3.11-slim sandbox image
+scripts/
+├── start.sh                   # Start all containers
+├── stop.sh                    # Stop all containers
+└── status.sh                  # Show container status
 tests/
 ├── test_supervisor.py         # 7 tests (router logic + full graph integration)
-└── test_rag.py                # 9 tests (decide_action + web_search + 3 CRAG paths)
+├── test_rag.py                # 9 tests (decide_action + web_search + 3 CRAG paths)
+└── test_code.py               # 13 tests (helpers + routing + sandbox + integration)
 ```
 
 ## Current state of development
@@ -69,12 +80,12 @@ tests/
 | 1     | Architecture design              | Done    |
 | 2     | Supervisor graph & routing       | Done    |
 | 3     | Corrective RAG sub-graph         | Done    |
-| 4     | Code generation & Docker sandbox | **Next** |
-| 5     | Integration & memory             | Pending |
+| 4     | Code generation & Docker sandbox | Done    |
+| 5     | Integration & memory             | **Next** |
 | 6     | HITL, streaming & observability  | Pending |
 | 7     | Hardening & polish               | Pending |
 
-**16 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
+**29 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
 
 ## How the graphs work
 
@@ -100,23 +111,31 @@ query → retrieve (Qdrant top-5)
       - "irrelevant" (0 docs or retries exhausted) → web_search → generate → END
 ```
 
-## What to do next (Phase 4)
+### Code flow
+```
+task → coder (LLM generates Python)
+  → executor (Docker sandbox, captures stdout/stderr)
+    → critic (LLM evaluates output):
+      - "pass"  → END (verified_output set)
+      - "fail"  → error_handler → coder (retry with feedback)
+      - retries exhausted → END (is_verified=False)
+```
 
-Build the Code Generation & Verification sub-graph in this order:
-1. Docker sandbox setup — a Python Docker image for isolated code execution
-2. `coder` node — LLM generates code from task description + research context
-3. `executor` node — run code in Docker, capture stdout/stderr/exit_code
-4. `critic` node — LLM evaluates: is the output correct?
-5. `error_handler` node — extract traceback, format feedback for retry
-6. Wire the self-correction loop: coder → executor → critic → {END | error_handler → coder}
-7. Tests for the full cycle
+## What to do next (Phase 5)
 
-After Phase 4, Phase 5 wires both sub-graphs into the supervisor (replacing stubs).
+Wire both sub-graphs into the supervisor, replacing stubs:
+1. Build adapter functions: SupervisorState ↔ RAGState, SupervisorState ↔ CodeState
+2. Replace `rag_subgraph_stub` with real compiled RAG graph
+3. Replace `code_subgraph_stub` with real compiled Code graph
+4. Replace `hybrid_stub` with RAG-then-Code sequential call
+5. Long-term memory: store past research results in Qdrant for future recall
+6. Cross-sub-graph context: pass RAG generation as context to Code coder
+7. End-to-end integration test with mocked LLM
 
 ## Container management
 
-Use `./scripts/start.sh` and `./scripts/stop.sh` to manage Docker containers (Qdrant, and
-later the code sandbox). See `docker/docker-compose.yml` for the full stack definition.
+Use `./scripts/start.sh` and `./scripts/stop.sh` to manage Docker containers (Qdrant +
+sandbox). See `docker/docker-compose.yml` for the full stack definition.
 
 ## Session workflow
 

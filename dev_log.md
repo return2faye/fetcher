@@ -139,11 +139,50 @@ tests/test_rag.py                   # 9 tests
 3. **DuckDuckGo `with` context manager** — clean resource handling, graceful fallback on network errors.
 4. **Embedding model singleton** — avoids reloading the 80MB model on every call.
 
-### Next Steps (Session 4 — Phase 4: Code Sub-Graph)
-1. Build Docker sandbox execution environment (Python image)
-2. Implement `coder` node — LLM generates code from task + context
-3. Implement `executor` node — run code in Docker container, capture stdout/stderr
-4. Implement `critic` node — LLM evaluates execution output
-5. Implement `error_handler` node — extract traceback, format retry feedback
-6. Wire self-correction loop with retry cap
-7. Integration test: generate → execute → verify cycle
+### Next Steps (Session 4 — Phase 4) ✅ DONE — see Session 4 below
+
+---
+
+## Session 4 — 2026-03-31
+
+### Status: Phase 4 Complete — Code Generation & Docker Sandbox
+
+### What was done
+- Built `Dockerfile.sandbox` — Python 3.11-slim with numpy, pandas, requests, matplotlib
+- Added sandbox to `docker-compose.yml` (network_mode: none, mem_limit: 512m, non-root user)
+- Built `utils/docker_sandbox.py` — execute code in container via `docker exec`, capture stdout/stderr/exit_code
+- Built all 4 code nodes in `nodes/code.py`:
+  - `coder` — LLM generates code with fenced block extraction; separate prompt for retries
+  - `executor` — delegates to Docker sandbox, handles missing container and empty code
+  - `critic` — LLM JSON verdict (pass/fail); skips LLM call if execution already errored
+  - `error_handler` — extracts traceback, increments retry count, formats feedback
+- `should_retry` conditional edge: verified → end, retries left → retry, exhausted → end
+- Wired full Code sub-graph in `graphs/code.py`
+- Also created AGENT.md, docker-compose, shell scripts, design_rationale.md (pre-Phase 4 tasks)
+- 13 new tests (29 total), all passing
+
+### New Files
+```
+docker/Dockerfile.sandbox              # Sandbox image definition
+src/fetcher/utils/docker_sandbox.py    # Docker exec wrapper
+src/fetcher/nodes/code.py              # All 4 code sub-graph nodes
+src/fetcher/graphs/code.py             # Code sub-graph wiring
+tests/test_code.py                     # 13 tests
+AGENT.md                               # Agent context document
+docs/design_rationale.md               # Design rationale report
+scripts/start.sh, stop.sh, status.sh   # Container management
+```
+
+### Key Design Decisions (Session 4)
+1. **Long-running sandbox container** — `sleep infinity` keeps the container alive; we `docker exec` into it. Avoids cold-start overhead of creating a new container per execution.
+2. **network_mode: none** — sandbox has no internet access. Code can't exfiltrate data or make unexpected API calls.
+3. **Critic skips LLM on execution errors** — if exit_code != 0, the error is already clear. No need to spend tokens asking the LLM to confirm.
+4. **Separate coder prompts for first attempt vs retry** — retry prompt includes previous code + error feedback, focusing the LLM on fixing the specific issue.
+5. **Regex code block extraction** — handles ```python, bare ```, and no-fence fallback. Robust to varying LLM output formats.
+
+### Next Steps (Session 5 — Phase 5: Integration & Memory)
+1. Replace stub sub-graph nodes in supervisor with real compiled RAG and Code sub-graphs
+2. Build adapter functions to translate between SupervisorState and sub-graph states
+3. End-to-end test: user query → plan → research → code → synthesize
+4. Long-term memory: store past research results in Qdrant for recall
+5. Cross-sub-graph context: pass RAG results as context to Code sub-graph

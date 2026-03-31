@@ -246,14 +246,17 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] CRAG graph wired: retrieve → grade → decide → {generate | rewrite→retrieve | web→generate}
 - [x] 9 tests (4 unit + 2 web_search + 3 integration paths) — all passing
 
-### Phase 4 — Code Sub-Graph (Generate-Execute-Verify)
-- [ ] Docker sandbox setup (execution environment)
-- [ ] `coder` node — LLM code generation
-- [ ] `executor` node — Docker-based execution, stdout/stderr capture
-- [ ] `critic` node — output evaluation
-- [ ] `error_handler` node — traceback extraction, retry routing
-- [ ] Self-correction loop wiring
-- [ ] Integration test: code gen → execute → verify cycle
+### Phase 4 — Code Sub-Graph (Generate-Execute-Verify) ✅ (Session 4)
+- [x] Docker sandbox: `Dockerfile.sandbox` (Python 3.11-slim + numpy/pandas/matplotlib)
+- [x] Docker Compose: sandbox container added (network_mode: none, mem_limit: 512m)
+- [x] `docker_sandbox.py` utility — execute code in container, capture stdout/stderr/exit_code
+- [x] `coder` node — LLM generates code (first attempt + retry with error feedback)
+- [x] `executor` node — runs code in Docker sandbox
+- [x] `critic` node — LLM evaluates output correctness (JSON verdict)
+- [x] `error_handler` node — traceback extraction, retry count increment
+- [x] `should_retry` conditional edge (verified → end, retries left → retry, exhausted → end)
+- [x] Code graph wired: coder → executor → critic → {END | error_handler → coder}
+- [x] 13 tests (3 helpers + 3 routing + 1 error_handler + 3 executor/sandbox + 3 integration) — all passing
 
 ### Phase 5 — Integration & Memory
 - [ ] Connect sub-graphs to supervisor as compiled nodes
