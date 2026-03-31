@@ -258,11 +258,15 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] Code graph wired: coder → executor → critic → {END | error_handler → coder}
 - [x] 13 tests (3 helpers + 3 routing + 1 error_handler + 3 executor/sandbox + 3 integration) — all passing
 
-### Phase 5 — Integration & Memory
-- [ ] Connect sub-graphs to supervisor as compiled nodes
-- [ ] End-to-end supervisor loop (plan → research → code → synthesize)
-- [ ] Long-term memory: store/retrieve past results from Qdrant
-- [ ] Cross-sub-graph context passing (research → code)
+### Phase 5 — Integration & Memory ✅ (Session 5)
+- [x] Integration layer: `nodes/integration.py` — adapter functions for RAG, Code, Hybrid
+- [x] `build_supervisor_graph(use_stubs=False)` wires real sub-graphs; `use_stubs=True` for unit tests
+- [x] End-to-end flows tested: research-only, code-only, hybrid, multi-task plan
+- [x] Long-term memory: `utils/memory.py` — separate Qdrant collection (`fetcher_memory`)
+- [x] Memory is best-effort: silently degrades if Qdrant unavailable
+- [x] Cross-sub-graph context: research results passed as context to Code coder node
+- [x] Past results recalled via vector similarity before each sub-graph invocation
+- [x] 9 new tests (38 total) — all passing
 
 ### Phase 6 — HITL, Streaming & Observability
 - [ ] `interrupt_before` on `human_review` node

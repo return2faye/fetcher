@@ -16,18 +16,31 @@ from fetcher.nodes.supervisor import (
     human_review,
     finalize,
 )
+from fetcher.nodes.integration import rag_node, code_node, hybrid_node
 
 
-def build_supervisor_graph() -> StateGraph:
-    """Construct the supervisor StateGraph (uncompiled)."""
+def build_supervisor_graph(use_stubs: bool = False) -> StateGraph:
+    """Construct the supervisor StateGraph (uncompiled).
+
+    Args:
+        use_stubs: If True, use stub nodes (for testing without Docker/Qdrant).
+                   If False (default), use real sub-graph integrations.
+    """
     graph = StateGraph(SupervisorState)
 
     # Add nodes
     graph.add_node("intake_planner", intake_planner)
     graph.add_node("router", router)
-    graph.add_node("rag_subgraph", rag_subgraph_stub)
-    graph.add_node("code_subgraph", code_subgraph_stub)
-    graph.add_node("hybrid_subgraph", hybrid_stub)
+
+    if use_stubs:
+        graph.add_node("rag_subgraph", rag_subgraph_stub)
+        graph.add_node("code_subgraph", code_subgraph_stub)
+        graph.add_node("hybrid_subgraph", hybrid_stub)
+    else:
+        graph.add_node("rag_subgraph", rag_node)
+        graph.add_node("code_subgraph", code_node)
+        graph.add_node("hybrid_subgraph", hybrid_node)
+
     graph.add_node("synthesizer", synthesizer)
     graph.add_node("human_review", human_review)
     graph.add_node("finalize", finalize)
@@ -61,8 +74,8 @@ def build_supervisor_graph() -> StateGraph:
     return graph
 
 
-def compile_supervisor(thread_id: str | None = None):
+def compile_supervisor(use_stubs: bool = False):
     """Compile the supervisor graph with SQLite checkpointer."""
-    graph = build_supervisor_graph()
+    graph = build_supervisor_graph(use_stubs=use_stubs)
     checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
     return graph.compile(checkpointer=checkpointer)

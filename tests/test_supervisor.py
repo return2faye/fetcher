@@ -108,7 +108,7 @@ def test_full_graph_flow_with_mock_llm():
             return _mock_llm_response(planner_response)
         return _mock_llm_response(synthesizer_response)
 
-    graph = build_supervisor_graph()
+    graph = build_supervisor_graph(use_stubs=True)
     app = graph.compile()
 
     with patch("fetcher.nodes.supervisor.get_llm") as mock_get_llm:

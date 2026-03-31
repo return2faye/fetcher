@@ -180,9 +180,48 @@ scripts/start.sh, stop.sh, status.sh   # Container management
 4. **Separate coder prompts for first attempt vs retry** — retry prompt includes previous code + error feedback, focusing the LLM on fixing the specific issue.
 5. **Regex code block extraction** — handles ```python, bare ```, and no-fence fallback. Robust to varying LLM output formats.
 
-### Next Steps (Session 5 — Phase 5: Integration & Memory)
-1. Replace stub sub-graph nodes in supervisor with real compiled RAG and Code sub-graphs
-2. Build adapter functions to translate between SupervisorState and sub-graph states
-3. End-to-end test: user query → plan → research → code → synthesize
-4. Long-term memory: store past research results in Qdrant for recall
-5. Cross-sub-graph context: pass RAG results as context to Code sub-graph
+### Next Steps (Session 5 — Phase 5) ✅ DONE — see Session 5 below
+
+---
+
+## Session 5 — 2026-03-31
+
+### Status: Phase 5 Complete — Integration & Memory
+
+### What was done
+- Built `nodes/integration.py` — adapter layer translating SupervisorState ↔ sub-graph states
+  - `rag_node`: invokes compiled RAG sub-graph, stores result in long-term memory
+  - `code_node`: invokes compiled Code sub-graph with research context, stores result
+  - `hybrid_node`: RAG then Code sequentially for a single task
+- Refactored `graphs/supervisor.py` — `build_supervisor_graph(use_stubs=False)` uses real sub-graphs; `use_stubs=True` preserves unit test compatibility
+- Built `utils/memory.py` — long-term memory via separate Qdrant collection (`fetcher_memory`)
+  - `store_result()`: embeds and upserts task+result with UUID
+  - `recall_context()`: retrieves relevant past results by vector similarity
+  - Best-effort: all operations silently fail if Qdrant unavailable
+- Cross-sub-graph context: all research results concatenated and passed as `context` to Code coder
+- Past context recall: before each sub-graph invocation, recall relevant memories from Qdrant
+- 9 new tests (38 total), all passing:
+  - 2 helper unit tests
+  - 4 end-to-end integration tests (research, code, hybrid, multi-task)
+  - 3 memory tests (graceful degradation + live Qdrant store/recall)
+
+### New Files
+```
+src/fetcher/nodes/integration.py    # Adapter layer: SupervisorState ↔ sub-graphs
+src/fetcher/utils/memory.py         # Long-term memory (Qdrant fetcher_memory collection)
+tests/test_integration.py           # 9 integration tests
+```
+
+### Key Design Decisions (Session 5)
+1. **Adapter pattern over direct sub-graph embedding** — sub-graphs have their own state schemas. Adapter functions translate between SupervisorState and RAGState/CodeState, keeping sub-graphs self-contained and independently testable.
+2. **`use_stubs` flag** — existing unit tests continue to work without Docker/Qdrant. Real sub-graphs used by default for production, stubs for fast isolated testing.
+3. **Separate memory collection** — `fetcher_memory` is distinct from `fetcher_docs`. User-ingested documents don't mix with system-generated memories.
+4. **Best-effort memory** — memory operations silently fail rather than crashing the pipeline. Memory is a quality enhancement, not a critical path.
+5. **Context concatenation** — all research results are joined and passed as code context. Simple and effective; could be improved with selective context later.
+
+### Next Steps (Session 6 — Phase 6: HITL, Streaming & Observability)
+1. Add `interrupt_before` on `human_review` node for human-in-the-loop
+2. Implement token-level streaming via `astream_events`
+3. Add LangSmith tracing configuration
+4. Build human feedback → re-route or approve flow
+5. Create a simple CLI runner to interact with the system

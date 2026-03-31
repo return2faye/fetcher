@@ -369,6 +369,98 @@ results* — the harder judgment that requires understanding the task intent.
 
 ---
 
+## 14. Adapter Pattern: Integration Layer Between Supervisor and Sub-Graphs
+
+### What it is
+`nodes/integration.py` contains `rag_node`, `code_node`, and `hybrid_node`. Each function
+accepts `SupervisorState`, extracts the relevant fields, creates a sub-graph initial state,
+invokes the compiled sub-graph, and merges results back into `SupervisorState`.
+
+### Why an adapter layer instead of embedding sub-graphs directly
+
+**State schema mismatch.** `SupervisorState` has fields like `plan`, `current_task_index`,
+`research_results` that don't exist in `RAGState`. And `RAGState` has fields like
+`rewrite_count`, `retrieval_grade` that the supervisor doesn't need. Direct embedding
+would require either a unified mega-state (wasteful, collision-prone) or LangGraph's
+sub-graph nesting (which requires compatible state schemas).
+
+The adapter pattern keeps each sub-graph fully self-contained with its own state schema.
+The integration layer is the only place that knows about both schemas. If we change
+`RAGState`, only `rag_node` in `integration.py` needs updating — the supervisor and
+code sub-graph are unaffected.
+
+### Why `use_stubs` flag instead of removing stubs
+
+**Test isolation.** The 7 original supervisor tests verify routing logic. They don't need
+Docker, Qdrant, or real sub-graphs. Making them depend on those services would make them
+slow and brittle. The `use_stubs=True` flag preserves the fast, isolated test path while
+`use_stubs=False` (default) uses real sub-graphs in production.
+
+---
+
+## 15. Long-Term Memory: Separate Collection, Best-Effort Operations
+
+### What it is
+`utils/memory.py` stores task results in a dedicated Qdrant collection (`fetcher_memory`)
+and recalls relevant past results before each sub-graph invocation.
+
+### Why a separate collection from document store
+
+**Different data, different lifecycle.** `fetcher_docs` holds user-ingested reference
+documents. `fetcher_memory` holds system-generated results from past queries. They have
+different update patterns (docs are ingested in bulk; memories accumulate per-query) and
+different relevance semantics (doc search is "find similar content"; memory search is
+"find past work on similar tasks").
+
+Keeping them separate means we can wipe memory without losing the document corpus, apply
+different retention policies, and avoid memory results contaminating document retrieval.
+
+### Why best-effort (silent failure)
+
+**Memory is an enhancement, not a dependency.** If Qdrant is down, the system should still
+work — it just won't have access to past context. Making memory operations crash the
+pipeline would mean a Qdrant restart kills an otherwise functional system. The `try/except`
+with `pass` ensures graceful degradation.
+
+This is a deliberate trade-off: we sacrifice observability (failed memory ops are invisible)
+for reliability. In Phase 6, LangSmith tracing will make these failures visible without
+making them fatal.
+
+### Why recall context before sub-graph invocation
+
+**Cross-session continuity.** If the user asked about "Python async patterns" yesterday
+and asks about "concurrent programming in Python" today, the memory recall surfaces
+yesterday's research as context. This makes the system get smarter over time without
+re-doing work.
+
+The recall threshold (0.5 cosine similarity) is deliberately low — we'd rather include
+marginally relevant context than miss useful past work. The LLM can ignore irrelevant
+context; it can't use context it never receives.
+
+---
+
+## 16. Cross-Sub-Graph Context: Research → Code
+
+### What it is
+When the code sub-graph runs, all accumulated `research_results` are concatenated and
+passed as the `context` parameter to the coder node.
+
+### Why this matters
+
+**Grounding code in research.** If the plan is: (1) research sorting algorithms, (2) write
+a benchmark — the coder needs to know *which* algorithms were found in step 1. Without
+context passing, the coder would generate code based only on the task description, ignoring
+all research findings.
+
+### Why simple concatenation
+
+All research answers are joined with `\n\n`. This is naive — it doesn't select the most
+relevant research for the specific code task, and it could exceed context windows for
+many research results. But it works for typical plans (1-4 tasks) and defers the complexity
+of selective context to a future optimization.
+
+---
+
 ## Decisions I Would Revisit
 
 These are choices that are correct *for now* but may need to change:
@@ -385,9 +477,8 @@ These are choices that are correct *for now* but may need to change:
    a chunking strategy yet. When we ingest real documents (PDFs, web pages), we'll need
    to add recursive character splitting or semantic chunking.
 
-4. **Stub-based integration testing**: The supervisor's full-flow test uses stub sub-graphs.
-   Once real sub-graphs are wired in (Phase 5), we'll need integration tests that exercise
-   the real CRAG and Code paths end-to-end.
+4. ~~**Stub-based integration testing**~~ — Resolved in Phase 5. Real sub-graph integration
+   tests now exist alongside stub-based unit tests.
 
 5. **Sandbox state leaks**: The persistent container doesn't clean up between runs. If
    tasks start interfering with each other, add a cleanup step (remove temp files) or
@@ -397,3 +488,7 @@ These are choices that are correct *for now* but may need to change:
    If the LLM generates code requiring other packages, it will fail. Options: expand the
    image, add a `pip install` step in the executor, or have the coder prompt list available
    packages.
+
+7. **Naive context concatenation**: All research results are passed to the coder. For plans
+   with many research tasks, this could exceed context windows. Future: embed task
+   descriptions and select only the most relevant research for each code task.

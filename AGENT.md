@@ -55,11 +55,13 @@ src/fetcher/
 ├── nodes/
 │   ├── supervisor.py          # intake_planner, router, stubs, synthesizer, finalize
 │   ├── rag.py                 # retrieve, grade_documents, rewrite_query, web_search, generate
-│   └── code.py                # coder, executor, critic, error_handler
+│   ├── code.py                # coder, executor, critic, error_handler
+│   └── integration.py         # Adapters: rag_node, code_node, hybrid_node (real sub-graphs)
 └── utils/
     ├── embeddings.py          # Singleton embedding model, embed_texts(), embed_query()
     ├── qdrant_client.py       # Qdrant ops: ensure_collection, ingest, search
-    └── docker_sandbox.py      # Docker exec wrapper for code execution
+    ├── docker_sandbox.py      # Docker exec wrapper for code execution
+    └── memory.py              # Long-term memory: store/recall via Qdrant (fetcher_memory)
 docker/
 ├── docker-compose.yml         # Qdrant + sandbox containers
 └── Dockerfile.sandbox         # Python 3.11-slim sandbox image
@@ -68,9 +70,10 @@ scripts/
 ├── stop.sh                    # Stop all containers
 └── status.sh                  # Show container status
 tests/
-├── test_supervisor.py         # 7 tests (router logic + full graph integration)
+├── test_supervisor.py         # 7 tests (router logic + full graph with stubs)
 ├── test_rag.py                # 9 tests (decide_action + web_search + 3 CRAG paths)
-└── test_code.py               # 13 tests (helpers + routing + sandbox + integration)
+├── test_code.py               # 13 tests (helpers + routing + sandbox + integration)
+└── test_integration.py        # 9 tests (end-to-end with real sub-graphs + memory)
 ```
 
 ## Current state of development
@@ -81,11 +84,12 @@ tests/
 | 2     | Supervisor graph & routing       | Done    |
 | 3     | Corrective RAG sub-graph         | Done    |
 | 4     | Code generation & Docker sandbox | Done    |
-| 5     | Integration & memory             | **Next** |
+| 5     | Integration & memory             | Done    |
+| 6     | HITL, streaming & observability  | **Next** |
 | 6     | HITL, streaming & observability  | Pending |
 | 7     | Hardening & polish               | Pending |
 
-**29 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
+**38 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
 
 ## How the graphs work
 
@@ -121,16 +125,14 @@ task → coder (LLM generates Python)
       - retries exhausted → END (is_verified=False)
 ```
 
-## What to do next (Phase 5)
+## What to do next (Phase 6)
 
-Wire both sub-graphs into the supervisor, replacing stubs:
-1. Build adapter functions: SupervisorState ↔ RAGState, SupervisorState ↔ CodeState
-2. Replace `rag_subgraph_stub` with real compiled RAG graph
-3. Replace `code_subgraph_stub` with real compiled Code graph
-4. Replace `hybrid_stub` with RAG-then-Code sequential call
-5. Long-term memory: store past research results in Qdrant for future recall
-6. Cross-sub-graph context: pass RAG generation as context to Code coder
-7. End-to-end integration test with mocked LLM
+Add human-in-the-loop, streaming, and observability:
+1. Add `interrupt_before` on `human_review` node for HITL approval gate
+2. Implement human feedback handling: approve → finalize, reject → re-route
+3. Token-level streaming via `astream_events` for real-time output
+4. LangSmith tracing configuration (optional, env-var gated)
+5. Build a simple CLI runner (`src/fetcher/cli.py`) to interact with the system
 
 ## Container management
 
