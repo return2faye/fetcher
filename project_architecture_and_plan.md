@@ -212,7 +212,7 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 | Component       | Technology              | Notes                           |
 |-----------------|-------------------------|---------------------------------|
 | Sandbox         | Docker (local)          | Isolated code execution          |
-| Web search      | DuckDuckGo (`duckduckgo-search`) | Free, no API key needed |
+| Web search      | DuckDuckGo (`duckduckgo-search`) | **⚠️ TO BE REPLACED (Phase 8a)** — returns irrelevant results |
 | LLM             | OpenAI via `langchain-openai` | GPT-4o / GPT-4o-mini          |
 | Embeddings      | `sentence-transformers` (`all-MiniLM-L6-v2`) | Local, free   |
 | Vector DB       | Qdrant (Docker)         | Long-term memory                 |
@@ -294,16 +294,39 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] CLI: argparse with `--help`, `KeyboardInterrupt` handling, `EOFError` handling
 - [x] 19 new tests (66 total): input validation, LLM failure fallbacks, timeout, Docker errors
 
-### Phase 8 — Self-Evolving Memory & Retrieval Improvements
+### Phase 8 — Content Fetching Reliability & Web Search Replacement ⬅️ NEXT
+> **Prerequisite for all later phases.** End-to-end testing (2026-04-01) revealed that
+> the content fetching pipeline has fundamental issues that invalidate previous integration
+> tests. These must be fixed before building higher-level features on top.
+
+**8a. Replace DuckDuckGo with a trusted search tool** (critical)
+- [ ] Evaluate and select a reliable search provider (e.g., Tavily, SerpAPI, Brave Search, Google Custom Search)
+- [ ] Implement new web search node with structured result parsing (title, snippet, URL, relevance)
+- [ ] Add result validation: reject empty/irrelevant results, verify result count
+- [ ] Integration tests with real queries to confirm result quality
+- [ ] Remove `duckduckgo-search` dependency
+
+**8b. Content fetching logic audit & fix** (critical, requires human review)
+- [ ] `search_documents()` missing `ensure_collection()` — crashes with 404 on empty Qdrant
+- [ ] `recall_context()` in memory.py — `_ensure_memory_collection()` silently fails, then query still attempted
+- [ ] Error results stored as memories — `store_result()` saves "(RAG sub-graph failed: ...)" text, which gets recalled and contaminates future queries
+- [ ] Memory-augmented query passed to web search — `integration.py` appends recalled memory to query, web search receives the bloated string instead of the clean task description
+- [ ] `_ensure_memory_collection()` swallows all exceptions but doesn't set `_initialized`, causing repeated failed retries vs. one-time silent degradation
+- [ ] Review all exception-swallowing patterns (`except Exception: pass`) in the pipeline for hidden failures
+
+**8c. Re-validate integration tests**
+- [ ] Audit existing integration tests against the bugs found above
+- [ ] Add regression tests for each content fetching bug
+- [ ] End-to-end smoke test with a real query (no mocks) must pass before moving on
+
+### Phase 9 — Self-Evolving Memory & Retrieval Improvements
 - [ ] Self-evolving memory: extract reusable knowledge from completed runs (strategies, patterns, topics)
 - [ ] Memory lifecycle: queryable, prunable, with relevance decay over time
 - [ ] Adaptive top-k retrieval based on query complexity (simple → top-3, complex → top-10)
 - [ ] Hybrid search: combine vector similarity with keyword matching for better recall
 - [ ] Document ingestion pipeline: chunking (recursive character + semantic) for PDFs, web pages, URLs
-- [ ] Web search improvements: result quality scoring, multi-query expansion
-- [ ] Web search fallback chain: DuckDuckGo → cached results → memory recall
 
-### Phase 9 — Synthesizer Verification & DAG Task Decomposition
+### Phase 10 — Synthesizer Verification & DAG Task Decomposition
 - [ ] Sub-result quality scoring: LLM grades each sub-result before synthesis
 - [ ] Auto-retry for low-quality sub-results (empty, errored, off-topic)
 - [ ] Synthesizer trust signals: weight high-quality results higher
@@ -311,7 +334,7 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [ ] Parallel task execution: router dispatches independent tasks concurrently
 - [ ] Evaluation rubric: LLM-as-judge scores the final answer, auto-retry below threshold
 
-### Phase 10 — Polish & Extensibility
+### Phase 11 — Polish & Extensibility
 - [ ] Expand sandbox packages or add dynamic `pip install` in executor
 - [ ] Multi-user support (Postgres checkpointer, auth)
 - [ ] Web UI or API server for non-CLI access

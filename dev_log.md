@@ -358,26 +358,34 @@ The reviewer raised these concerns and suggestions:
 | Self-evolve, 构建 memory | Raw result storage, no learning | Phase 8: Self-evolving memory with pattern extraction |
 | Supervisor 分解任务 — rubric/DAG | Flat sequential list, no parallelism | Phase 9: DAG decomposition, parallel dispatch, eval rubric |
 
-### New Phase Plan
+### New Phase Plan (revised 2026-04-01 after end-to-end testing)
 
-**Phase 8 — Self-Evolving Memory & Retrieval Improvements**
-1. Self-evolving memory: extract reusable knowledge from completed runs
-2. Memory lifecycle: queryable, prunable, relevance decay
-3. Adaptive top-k retrieval (query complexity → retrieval depth)
-4. Hybrid search: vector + keyword matching
-5. Document ingestion pipeline with chunking
-6. Web search: quality scoring, multi-query expansion, fallback chain
+> **Previous Phase 8-10 plan invalidated.** End-to-end testing on 2026-04-01 revealed
+> fundamental content fetching failures that cascade through the entire pipeline. The
+> DuckDuckGo search returned completely irrelevant results (gaming sites for a quicksort
+> query), and multiple silent failures in the RAG/memory pipeline compound to produce
+> garbage output. These must be fixed before building any higher-level features.
 
-**Phase 9 — Synthesizer Verification & DAG Task Decomposition**
-1. Sub-result quality scoring before synthesis
-2. Auto-retry for low-quality sub-results
-3. DAG-based task decomposition (dependency graph, not flat list)
-4. Parallel task execution for independent tasks
-5. LLM-as-judge evaluation rubric for final answer quality
+**Phase 8 — Content Fetching Reliability & Web Search Replacement** ⬅️ NEXT
+- 8a. Replace DuckDuckGo with a trusted, validated search provider
+- 8b. Audit and fix all content fetching logic (6 known bugs, details in architecture doc)
+- 8c. Re-validate integration tests — no mocked-away failures
 
-**Phase 10 — Polish & Extensibility**
-1. Expand sandbox packages / dynamic pip install
-2. Multi-user support (Postgres checkpointer)
-3. Web UI or API server
+**Phase 9 — Self-Evolving Memory & Retrieval Improvements**
+(was Phase 8 — deferred until content fetching is reliable)
 
-### Next Steps (Session 9 — Phase 8: Self-Evolving Memory & Retrieval)
+**Phase 10 — Synthesizer Verification & DAG Task Decomposition**
+(was Phase 9)
+
+**Phase 11 — Polish & Extensibility**
+(was Phase 10)
+
+### Known Content Fetching Bugs (found 2026-04-01)
+1. `search_documents()` missing `ensure_collection()` — 404 on empty Qdrant
+2. `_ensure_memory_collection()` silently fails but doesn't set `_initialized` flag correctly
+3. Error messages stored as memories via `store_result()` — contaminates future recall
+4. Memory-augmented query (with recalled junk) passed to web search node
+5. DuckDuckGo returns irrelevant results — deprecated package, unreliable for structured queries
+6. Broad `except Exception: pass` patterns hide real failures throughout the pipeline
+
+### Next Steps (Session 9 — Phase 8: Content Fetching Reliability)
