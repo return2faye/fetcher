@@ -293,3 +293,26 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] Docker daemon unavailability handled gracefully
 - [x] CLI: argparse with `--help`, `KeyboardInterrupt` handling, `EOFError` handling
 - [x] 19 new tests (66 total): input validation, LLM failure fallbacks, timeout, Docker errors
+
+### Phase 8 — Self-Evolving Memory & Retrieval Improvements
+- [ ] Self-evolving memory: extract reusable knowledge from completed runs (strategies, patterns, topics)
+- [ ] Memory lifecycle: queryable, prunable, with relevance decay over time
+- [ ] Adaptive top-k retrieval based on query complexity (simple → top-3, complex → top-10)
+- [ ] Hybrid search: combine vector similarity with keyword matching for better recall
+- [ ] Document ingestion pipeline: chunking (recursive character + semantic) for PDFs, web pages, URLs
+- [ ] Web search improvements: result quality scoring, multi-query expansion
+- [ ] Web search fallback chain: DuckDuckGo → cached results → memory recall
+
+### Phase 9 — Synthesizer Verification & DAG Task Decomposition
+- [ ] Sub-result quality scoring: LLM grades each sub-result before synthesis
+- [ ] Auto-retry for low-quality sub-results (empty, errored, off-topic)
+- [ ] Synthesizer trust signals: weight high-quality results higher
+- [ ] DAG-based task decomposition: planner outputs a dependency graph, not a flat list
+- [ ] Parallel task execution: router dispatches independent tasks concurrently
+- [ ] Evaluation rubric: LLM-as-judge scores the final answer, auto-retry below threshold
+
+### Phase 10 — Polish & Extensibility
+- [ ] Expand sandbox packages or add dynamic `pip install` in executor
+- [ ] Multi-user support (Postgres checkpointer, auth)
+- [ ] Web UI or API server for non-CLI access
+- [ ] Plugin architecture for custom sub-graphs

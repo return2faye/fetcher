@@ -583,6 +583,108 @@ error (non-zero) and success (0).
 
 ---
 
+## 21. SqliteSaver: Direct Constructor Over `from_conn_string`
+
+### What happened
+`SqliteSaver.from_conn_string()` is a generator (context manager), not a direct constructor.
+LangGraph 1.1.3's `graph.compile(checkpointer=...)` expects a `BaseCheckpointSaver` instance.
+Passing a generator causes `TypeError: Invalid checkpointer provided`.
+
+### The fix
+```python
+# Before (broken):
+checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
+
+# After (correct):
+checkpointer = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False))
+```
+
+`check_same_thread=False` is needed because LangGraph may access the connection from
+different threads (e.g., in async streaming mode). SQLite itself is thread-safe in
+serialized mode (the default), but Python's `sqlite3` module raises an error without
+this flag.
+
+---
+
+## 22. Reviewer Feedback: Planned Architectural Changes
+
+### Context
+A reviewer evaluated the system and identified several gaps. This section documents the
+planned responses and the reasoning behind the phased approach.
+
+### Self-evolving memory (Phase 8)
+
+**Current state:** `utils/memory.py` stores raw task+result pairs in Qdrant. Recall is
+pure vector similarity. No learning, no pruning, no structure.
+
+**What's missing:** The memory doesn't *improve* the system over time. Storing "Python
+decorators are functions that modify functions" doesn't help future queries about
+decorators unless the exact phrasing is similar.
+
+**Planned approach:**
+- **Knowledge extraction:** After each run, an LLM pass extracts *reusable patterns*
+  (e.g., "DuckDuckGo works better for recent topics; Qdrant retrieval works better for
+  documented concepts"). Store patterns separately from raw results.
+- **Relevance decay:** Older memories get lower weight. A result from 100 queries ago is
+  less likely to be relevant than a recent one.
+- **Pruning:** Periodic cleanup of low-utility memories (never recalled, very old, duplicate).
+
+**Why not now:** Self-evolving memory requires careful design to avoid drift (storing
+incorrect patterns) and bloat (storing everything). It needs evaluation metrics to verify
+that memory actually improves outcomes.
+
+### Synthesizer sub-result verification (Phase 9)
+
+**Current state:** The synthesizer trusts all sub-results equally. If the RAG sub-graph
+returns garbage (e.g., web search failed silently), the synthesis incorporates it.
+
+**What's missing:** No quality signal on sub-results. The synthesizer can't distinguish
+"high-confidence research finding" from "fallback empty result."
+
+**Planned approach:**
+- Each sub-result gets a quality score (0-1) based on: was web search used (lower
+  confidence), did code execute successfully, how many graded-relevant docs were found.
+- The synthesizer prompt includes quality annotations: `[HIGH confidence] Quicksort is
+  O(n log n)` vs `[LOW confidence] No relevant documents found`.
+- Sub-results below a threshold trigger automatic re-execution of that task.
+
+### DAG task decomposition (Phase 9)
+
+**Current state:** Planner outputs `[{"type": "research", "description": "..."}]` — a
+flat, sequential list. Tasks execute one after another, even if independent.
+
+**What's missing:** If the plan is: (1) research sorting algorithms, (2) research Python
+benchmarking tools, (3) write benchmark code — tasks 1 and 2 are independent and could
+run in parallel. The sequential model wastes time.
+
+**Planned approach:**
+- Planner outputs `{"tasks": [...], "dependencies": {"2": ["0", "1"]}}` — each task lists
+  its dependencies by index.
+- Router becomes a scheduler: maintain a "ready queue" of tasks whose dependencies are
+  all complete. Dispatch ready tasks (potentially in parallel via `asyncio.gather`).
+- Sequential plans are a degenerate case of DAGs (each task depends on the previous).
+
+**Why DAG over other approaches:** A full agent loop (ReAct) would be more flexible but
+less predictable. DAG keeps the plan explicit and inspectable — the human can see what
+will run in parallel before approving. It's also easier to test than emergent behavior.
+
+### DuckDuckGo improvements (Phase 8)
+
+**Current state:** Single search call, 5 results, bare `except` on failure.
+
+**What's missing:** No quality signal on search results. If DuckDuckGo returns irrelevant
+results (common for technical queries), we pass them to the generator as if they're useful.
+
+**Planned approach:**
+- **Multi-query expansion:** For a query like "Python async patterns," also search
+  "Python asyncio tutorial" and "Python coroutine best practices." Merge and deduplicate.
+- **Result quality scoring:** LLM grades each web result for relevance (similar to doc
+  grading). This already exists for retrieved docs but not for web search results.
+- **Fallback chain:** DuckDuckGo → memory recall → report "insufficient data." Better
+  than silently returning low-quality results.
+
+---
+
 ## Decisions I Would Revisit
 
 These are choices that are correct *for now* but may need to change:
@@ -591,26 +693,23 @@ These are choices that are correct *for now* but may need to change:
    accuracy becomes a bottleneck (too many false positives/negatives), upgrading to gpt-4o
    for just the grader node is a one-line change.
 
-2. **Fixed top-5 retrieval**: We always retrieve 5 documents. For some queries, 3 would
-   suffice; for others, 10 would help. Adaptive retrieval (based on query complexity)
-   could improve quality and reduce grading costs.
+2. ~~**Fixed top-5 retrieval**~~ — Planned for Phase 8. Adaptive top-k based on query
+   complexity.
 
-3. **No chunking in ingestion**: `ingest_documents` takes pre-split texts. We don't have
-   a chunking strategy yet. When we ingest real documents (PDFs, web pages), we'll need
-   to add recursive character splitting or semantic chunking.
+3. ~~**No chunking in ingestion**~~ — Planned for Phase 8. Document ingestion pipeline
+   with recursive character + semantic chunking.
 
-4. ~~**Stub-based integration testing**~~ — Resolved in Phase 5. Real sub-graph integration
-   tests now exist alongside stub-based unit tests.
+4. ~~**Stub-based integration testing**~~ — Resolved in Phase 5.
 
 5. **Sandbox state leaks**: The persistent container doesn't clean up between runs. If
    tasks start interfering with each other, add a cleanup step (remove temp files) or
    switch to per-execution containers with a warm pool.
 
 6. **Fixed sandbox packages**: Only numpy/pandas/matplotlib/requests are pre-installed.
-   If the LLM generates code requiring other packages, it will fail. Options: expand the
-   image, add a `pip install` step in the executor, or have the coder prompt list available
-   packages.
+   If the LLM generates code requiring other packages, it will fail. Planned for Phase 10.
 
-7. **Naive context concatenation**: All research results are passed to the coder. For plans
-   with many research tasks, this could exceed context windows. Future: embed task
-   descriptions and select only the most relevant research for each code task.
+7. ~~**Naive context concatenation**~~ — Planned for Phase 9. Selective context based on
+   task-to-research relevance scoring.
+
+8. **Flat sequential task plan** — Planned for Phase 9. DAG-based decomposition with
+   parallel execution of independent tasks.

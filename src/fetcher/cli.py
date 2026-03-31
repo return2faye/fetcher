@@ -2,14 +2,14 @@
 
 import argparse
 import asyncio
+import sqlite3
 import sys
 import uuid
 
-from fetcher.config import LANGSMITH_TRACING_ENABLED, MAX_QUERY_LENGTH
+from fetcher.config import LANGSMITH_TRACING_ENABLED, MAX_QUERY_LENGTH, SQLITE_DB_PATH
 from fetcher.graphs.supervisor import build_supervisor_graph
 
 from langgraph.checkpoint.sqlite import SqliteSaver
-from fetcher.config import SQLITE_DB_PATH
 
 
 def _print_header():
@@ -56,7 +56,7 @@ def _print_final(answer: str):
 async def run_streaming(query: str):
     """Run the supervisor graph with streaming output and HITL interrupts."""
     graph = build_supervisor_graph(use_stubs=False)
-    checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
+    checkpointer = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False))
     app = graph.compile(checkpointer=checkpointer)
 
     thread_id = str(uuid.uuid4())
@@ -124,7 +124,7 @@ async def run_streaming(query: str):
 def run_sync(query: str):
     """Run the supervisor graph synchronously (no streaming) with HITL."""
     graph = build_supervisor_graph(use_stubs=False)
-    checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
+    checkpointer = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False))
     app = graph.compile(checkpointer=checkpointer)
 
     thread_id = str(uuid.uuid4())

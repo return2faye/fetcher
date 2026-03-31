@@ -130,15 +130,41 @@ task → coder (LLM generates Python)
       - retries exhausted → END (is_verified=False)
 ```
 
-## What to do next (future work)
+## What to do next (Phase 8)
 
-Potential improvements:
-1. Document ingestion pipeline (chunking strategy for PDFs, web pages)
-2. Adaptive retrieval (variable top-k based on query complexity)
-3. Expand sandbox packages or add dynamic `pip install`
-4. Multi-user support (Postgres checkpointer, auth)
-5. Web UI or API server for non-CLI access
-6. Selective context: embed task descriptions and pick most relevant research for each code task
+**Phase 8 — Self-Evolving Memory & Retrieval Improvements**
+
+The reviewer flagged several areas for improvement. Phase 8 addresses the most impactful:
+
+1. **Self-evolving memory** — After each completed query, automatically extract and store
+   reusable knowledge (not just raw results). The system should learn from past runs:
+   which search strategies worked, which code patterns succeeded, what topics the user
+   asks about. Memory should be queryable and prunable.
+2. **Smarter retrieval** — Current RAG uses fixed top-5 retrieval. Improve with:
+   - Adaptive top-k based on query complexity
+   - Hybrid search (vector + keyword) for better recall
+   - Document ingestion pipeline with chunking (PDFs, web pages, URLs)
+3. **Web search improvements** — DuckDuckGo is unreliable and has no structured output.
+   Add result quality scoring, multi-query expansion, and a fallback chain
+   (DuckDuckGo → cached results → memory recall).
+
+**Phase 9 — Synthesizer Verification & DAG Task Decomposition**
+
+4. **Synthesizer sub-result verification** — Before synthesizing, score each sub-result
+   for quality/relevance. Flag or retry tasks whose output is empty, errored, or
+   off-topic. The synthesizer should know which inputs to trust.
+5. **DAG-based task decomposition** — Current planner produces a flat sequential list.
+   Upgrade to a DAG where independent tasks run in parallel and dependencies are explicit.
+   The router becomes a scheduler that dispatches ready tasks.
+6. **Evaluation rubric** — LLM-as-judge scoring of the final answer against the original
+   query. If the score is below threshold, auto-retry before presenting to the human.
+
+**Phase 10 — Polish & Extensibility**
+
+7. Document ingestion pipeline (chunking for PDFs, web pages)
+8. Expand sandbox packages or add dynamic `pip install`
+9. Multi-user support (Postgres checkpointer)
+10. Web UI or API server
 
 ## Container management
 

@@ -1,5 +1,7 @@
 """Supervisor graph: top-level orchestrator with conditional routing to sub-graphs."""
 
+import sqlite3
+
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -92,5 +94,5 @@ def build_supervisor_graph(use_stubs: bool = False) -> StateGraph:
 def compile_supervisor(use_stubs: bool = False):
     """Compile the supervisor graph with SQLite checkpointer."""
     graph = build_supervisor_graph(use_stubs=use_stubs)
-    checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
+    checkpointer = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False))
     return graph.compile(checkpointer=checkpointer)

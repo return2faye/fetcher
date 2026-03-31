@@ -314,9 +314,70 @@ tests/test_code.py                   # Updated mock_exec signatures for timeout 
 3. **Optimistic critic on failure** — If the critic LLM is unreachable but code ran successfully (exit_code=0), we optimistically pass. The alternative (failing the whole code task) penalizes the user for an infrastructure issue unrelated to their code.
 4. **Tasks always advance** — Sub-graph failures in integration.py produce error messages but still increment `current_task_index`. This prevents a single failed task from blocking the entire plan.
 
-### Future Work
-1. Document ingestion pipeline (chunking for PDFs, web pages)
-2. Adaptive retrieval (variable top-k based on query complexity)
-3. Expand sandbox packages or add dynamic pip install
-4. Multi-user support (Postgres checkpointer)
-5. Web UI or API server
+### Next Steps (Session 8) ✅ Bug fix done — see Session 8 below
+
+---
+
+## Session 8 — 2026-04-01
+
+### Status: Bug Fix + Reviewer Feedback → New Phase Plan
+
+### What was done
+- **Bug fix**: `SqliteSaver.from_conn_string()` returns a context manager (generator), not
+  a `BaseCheckpointSaver` instance. LangGraph 1.1.3 rejects it. Fixed by using the direct
+  constructor: `SqliteSaver(conn=sqlite3.connect(..., check_same_thread=False))`. Applied
+  in `cli.py` (2 locations) and `graphs/supervisor.py` (1 location).
+- **Reviewer feedback analysis**: Mapped reviewer concerns to three new development phases.
+
+### Bug Fix Details
+```
+# Before (broken — returns a generator context manager):
+checkpointer = SqliteSaver.from_conn_string(f"sqlite:///{SQLITE_DB_PATH}")
+
+# After (correct — returns a SqliteSaver instance):
+checkpointer = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False))
+```
+
+### Modified Files
+```
+src/fetcher/cli.py             # Fixed checkpointer in run_streaming() and run_sync()
+src/fetcher/graphs/supervisor.py # Fixed checkpointer in compile_supervisor()
+```
+
+### Reviewer Feedback → Phase Mapping
+
+The reviewer raised these concerns and suggestions:
+
+| Reviewer Question | Current State | Planned Fix |
+|---|---|---|
+| Memory 如何管理？Self-evolve? | Best-effort store/recall of raw results in Qdrant | Phase 8: Extract reusable knowledge, relevance decay, prunable |
+| RAG vector DB 怎么查找 external 数据？ | Fixed top-5, vector-only search | Phase 8: Adaptive top-k, hybrid search, doc ingestion pipeline |
+| Code Engine raise Error 有纠错机制？ | Yes: critic → error_handler → coder retry loop (max 3) | Already implemented (Phase 4). Phase 9 adds sub-result quality scoring. |
+| Synthesizer 如果 subagent 有错怎么 detect/retry？ | No detection — synthesizer trusts all inputs | Phase 9: Score sub-results, flag/retry low-quality, trust signals |
+| DuckDuckGo 可以改进？ | Basic search, bare except on failure | Phase 8: Quality scoring, multi-query expansion, fallback chain |
+| Self-evolve, 构建 memory | Raw result storage, no learning | Phase 8: Self-evolving memory with pattern extraction |
+| Supervisor 分解任务 — rubric/DAG | Flat sequential list, no parallelism | Phase 9: DAG decomposition, parallel dispatch, eval rubric |
+
+### New Phase Plan
+
+**Phase 8 — Self-Evolving Memory & Retrieval Improvements**
+1. Self-evolving memory: extract reusable knowledge from completed runs
+2. Memory lifecycle: queryable, prunable, relevance decay
+3. Adaptive top-k retrieval (query complexity → retrieval depth)
+4. Hybrid search: vector + keyword matching
+5. Document ingestion pipeline with chunking
+6. Web search: quality scoring, multi-query expansion, fallback chain
+
+**Phase 9 — Synthesizer Verification & DAG Task Decomposition**
+1. Sub-result quality scoring before synthesis
+2. Auto-retry for low-quality sub-results
+3. DAG-based task decomposition (dependency graph, not flat list)
+4. Parallel task execution for independent tasks
+5. LLM-as-judge evaluation rubric for final answer quality
+
+**Phase 10 — Polish & Extensibility**
+1. Expand sandbox packages / dynamic pip install
+2. Multi-user support (Postgres checkpointer)
+3. Web UI or API server
+
+### Next Steps (Session 9 — Phase 8: Self-Evolving Memory & Retrieval)
