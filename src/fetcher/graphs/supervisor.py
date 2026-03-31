@@ -14,6 +14,8 @@ from fetcher.nodes.supervisor import (
     hybrid_stub,
     synthesizer,
     human_review,
+    route_after_human_review,
+    revise_synthesis,
     finalize,
 )
 from fetcher.nodes.integration import rag_node, code_node, hybrid_node
@@ -43,6 +45,7 @@ def build_supervisor_graph(use_stubs: bool = False) -> StateGraph:
 
     graph.add_node("synthesizer", synthesizer)
     graph.add_node("human_review", human_review)
+    graph.add_node("revise_synthesis", revise_synthesis)
     graph.add_node("finalize", finalize)
 
     # Edges
@@ -66,9 +69,21 @@ def build_supervisor_graph(use_stubs: bool = False) -> StateGraph:
     graph.add_edge("code_subgraph", "router")
     graph.add_edge("hybrid_subgraph", "router")
 
-    # Synthesis → human review → finalize
+    # Synthesis → human review → conditional routing
     graph.add_edge("synthesizer", "human_review")
-    graph.add_edge("human_review", "finalize")
+    graph.add_conditional_edges(
+        "human_review",
+        route_after_human_review,
+        {
+            "finalize": "finalize",
+            "revise": "revise_synthesis",
+            "replan": "intake_planner",
+        },
+    )
+
+    # Revision loops back to human review for re-approval
+    graph.add_edge("revise_synthesis", "human_review")
+
     graph.add_edge("finalize", END)
 
     return graph

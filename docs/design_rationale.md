@@ -461,6 +461,96 @@ of selective context to a future optimization.
 
 ---
 
+## 17. HITL: `interrupt()` Over `interrupt_before`
+
+### What it is
+The `human_review` node calls `interrupt()` from inside the node function, passing context
+(the draft answer and execution plan) and receiving the human's feedback as the return value.
+
+### Why `interrupt()` instead of `interrupt_before`
+
+LangGraph offers two mechanisms for pausing a graph:
+- `interrupt_before=["node_name"]` at compile time — pauses *before* the node runs
+- `interrupt()` called *inside* a node — pauses mid-execution and returns when resumed
+
+**`interrupt()` wins because:**
+
+1. **Context passing.** We want to show the human the draft answer and plan *at interrupt
+   time*. With `interrupt_before`, the node hasn't run yet, so any context must come from
+   the previous node's state. With `interrupt()`, the node itself decides what to present.
+
+2. **Typed feedback.** The `interrupt()` return value *is* the human's feedback. We parse
+   it directly: empty/"approve" → proceed, "reject:reason" → re-plan, anything else →
+   revision. With `interrupt_before`, feedback would need to be injected into the state
+   manually before resuming.
+
+3. **Simpler routing.** The node processes the feedback and sets state fields that the
+   downstream conditional edge reads. Everything is self-contained in the node function.
+
+### Why three feedback paths
+
+| Feedback | Route | Cost | When to use |
+|----------|-------|------|------------|
+| approve | finalize | Free | Answer is satisfactory |
+| reject:reason | intake_planner | Expensive (full re-plan) | Fundamentally wrong approach |
+| revision text | revise_synthesis | Cheap (one LLM call) | Answer needs adjustment |
+
+**Why not just "approve/reject"?** Most real feedback is *revision*, not rejection. "Add
+more detail about X" doesn't require re-planning — it just needs a better synthesis from
+the same sub-results. The three-way split handles the common case cheaply.
+
+**Why allow unlimited revision loops?** `revise_synthesis → human_review` has no iteration
+cap. The human is in control and can approve at any time. Adding a cap would force
+auto-approval of a potentially unsatisfactory answer.
+
+---
+
+## 18. CLI: Streaming vs Sync Modes
+
+### What it is
+`cli.py` supports two modes: `--stream` (async with `astream_events`) and default sync
+(`invoke` with blocking HITL prompts).
+
+### Why both modes
+
+**Streaming is better UX** — the user sees tokens as they're generated, which makes long
+LLM calls feel faster. But streaming adds complexity: async event loop, event filtering,
+and careful output formatting.
+
+**Sync mode exists for debugging** and for environments where async is problematic. It
+uses `invoke()`, which blocks until the graph hits an interrupt or completes. The HITL
+flow works identically in both modes.
+
+### Why `astream_events` v2
+
+LangGraph's `astream_events(version="v2")` provides fine-grained events including
+`on_chat_model_stream` for token-level chunks. Version 1 has a different event schema
+that's harder to filter. V2 is the current recommended version.
+
+---
+
+## 19. LangSmith Tracing: Env-Var Gated Activation
+
+### What it is
+When `LANGSMITH_API_KEY` is set in the environment, `config.py` automatically configures
+the `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, and `LANGCHAIN_PROJECT` env vars that
+LangChain/LangGraph read to enable LangSmith tracing.
+
+### Why env-var gating
+
+**Zero-code opt-in.** The user doesn't need to modify any Python code to enable tracing.
+Just set one env var and all LLM calls, graph transitions, and node executions are traced.
+
+**`setdefault` not `setitem`.** We use `os.environ.setdefault()` so that if the user
+has explicitly set `LANGCHAIN_PROJECT` to a custom value, we don't override it. The
+config module provides sensible defaults without being opinionated.
+
+**Why not always-on?** LangSmith requires an API key and sends data to an external service.
+Making it opt-in respects the user's privacy and avoids cryptic errors when the key is
+missing.
+
+---
+
 ## Decisions I Would Revisit
 
 These are choices that are correct *for now* but may need to change:

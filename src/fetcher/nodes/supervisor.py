@@ -2,6 +2,7 @@
 
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langgraph.types import interrupt, Command
 
 from fetcher.config import OPENAI_MODEL, OPENAI_MODEL_HEAVY, MAX_PLAN_ITERATIONS
 from fetcher.state import SupervisorState
@@ -170,8 +171,81 @@ def synthesizer(state: SupervisorState) -> dict:
 
 
 def human_review(state: SupervisorState) -> dict:
-    """HITL node. In Phase 6 this will use interrupt_before."""
-    return {}
+    """HITL gate: pause execution and wait for human feedback.
+
+    The interrupt() call pauses the graph. When resumed, the user provides
+    feedback as the interrupt response:
+      - "approve" or empty string → proceed to finalize
+      - "reject:<reason>" → re-plan with feedback
+      - any other string → treat as revision instructions, re-synthesize
+    """
+    feedback = interrupt({
+        "question": "Review the answer and provide feedback.",
+        "final_answer": state.get("final_answer", ""),
+        "plan": state.get("plan", []),
+    })
+
+    # Normalize feedback
+    feedback_str = str(feedback).strip() if feedback else ""
+
+    if not feedback_str or feedback_str.lower() == "approve":
+        # Approved — proceed to finalize
+        return {"human_feedback": "approved", "needs_human_approval": False}
+
+    if feedback_str.lower().startswith("reject"):
+        # Rejected — store reason, signal re-route
+        reason = feedback_str.split(":", 1)[1].strip() if ":" in feedback_str else "No reason given"
+        return {"human_feedback": f"rejected: {reason}", "needs_human_approval": True}
+
+    # Revision instructions — re-synthesize with feedback
+    return {"human_feedback": feedback_str, "needs_human_approval": True}
+
+
+def route_after_human_review(state: SupervisorState) -> str:
+    """Conditional edge after human_review: finalize or re-synthesize."""
+    feedback = state.get("human_feedback", "approved")
+
+    if feedback == "approved":
+        return "finalize"
+
+    if feedback.startswith("rejected:"):
+        # Go back to intake_planner to re-plan with the rejection reason
+        return "replan"
+
+    # Revision feedback — re-synthesize with the human's instructions
+    return "revise"
+
+
+def revise_synthesis(state: SupervisorState) -> dict:
+    """Re-synthesize the answer incorporating human feedback."""
+    llm = get_llm(heavy=True)
+
+    context_parts = []
+    for r in state.get("research_results", []):
+        context_parts.append(f"Research: {r.get('answer', '')}")
+    for c in state.get("code_results", []):
+        context_parts.append(f"Code output: {c.get('output', '')}")
+    context = "\n\n".join(context_parts) or "No sub-task results available."
+
+    messages = [
+        SystemMessage(content=SYNTHESIZER_SYSTEM_PROMPT),
+        HumanMessage(
+            content=(
+                f"Original query: {state['user_query']}\n\n"
+                f"Sub-task results:\n{context}\n\n"
+                f"Previous answer:\n{state.get('final_answer', '')}\n\n"
+                f"Human feedback (incorporate this):\n{state.get('human_feedback', '')}"
+            )
+        ),
+    ]
+    response = llm.invoke(messages)
+
+    return {
+        "messages": [response],
+        "final_answer": response.content,
+        "needs_human_approval": True,
+        "human_feedback": None,
+    }
 
 
 def finalize(state: SupervisorState) -> dict:

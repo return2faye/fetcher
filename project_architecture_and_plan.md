@@ -131,7 +131,8 @@ class CodeState(TypedDict):
 | `rag_subgraph`      | Invoke RAG sub-graph (compiled as a node)             |
 | `code_subgraph`     | Invoke Code sub-graph (compiled as a node)            |
 | `synthesizer`       | Merge all sub-results into a coherent final answer    |
-| `human_review`      | `interrupt_before` — pause for human approval         |
+| `human_review`      | `interrupt()` — pause for human feedback (approve/reject/revise) |
+| `revise_synthesis`  | Re-synthesize answer with human revision feedback     |
 | `finalize`          | Emit final answer, write to long-term memory          |
 
 **Edges:**
@@ -144,8 +145,12 @@ router ──▶ rag_subgraph      (if task_type == "hybrid", then code_subgraph
 router ──▶ synthesizer        (if task_type == "done")
 rag_subgraph ──▶ router       (loop back for next task)
 code_subgraph ──▶ router      (loop back for next task)
-synthesizer ──▶ human_review  (interrupt_before)
-human_review ──▶ finalize ──▶ END
+synthesizer ──▶ human_review  (interrupt — waits for feedback)
+human_review ──▶ finalize         (if approved)
+human_review ──▶ revise_synthesis (if revision requested)
+human_review ──▶ intake_planner   (if rejected — re-plan)
+revise_synthesis ──▶ human_review (loop for re-approval)
+finalize ──▶ END
 ```
 
 ### 3.2 RAG Sub-Graph (Corrective RAG)
@@ -268,11 +273,15 @@ error_handler ──▶ END         (if retries exhausted — return partial res
 - [x] Past results recalled via vector similarity before each sub-graph invocation
 - [x] 9 new tests (38 total) — all passing
 
-### Phase 6 — HITL, Streaming & Observability
-- [ ] `interrupt_before` on `human_review` node
-- [ ] Token-level streaming (`astream_events`)
-- [ ] LangSmith tracing configuration
-- [ ] Human feedback → re-route or approve flow
+### Phase 6 — HITL, Streaming & Observability ✅ (Session 6)
+- [x] `human_review` node uses `interrupt()` to pause for human feedback
+- [x] Feedback routing: approve → finalize, reject → re-plan, revise → re-synthesize → review
+- [x] `revise_synthesis` node re-generates answer incorporating human feedback
+- [x] `route_after_human_review` conditional edge for feedback-based routing
+- [x] Token-level streaming via `astream_events` (in CLI runner)
+- [x] LangSmith tracing configuration (env-var gated: set `LANGSMITH_API_KEY` to enable)
+- [x] CLI runner (`src/fetcher/cli.py`): sync mode + streaming mode (`--stream`)
+- [x] 9 new tests (47 total): 4 unit + 3 HITL interrupt/resume integration + 1 revision + 1 LangSmith config
 
 ### Phase 7 — Hardening & Polish
 - [ ] Error handling and graceful degradation

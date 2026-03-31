@@ -23,3 +23,14 @@ MAX_PLAN_ITERATIONS = 10
 MAX_RAG_REWRITES = 2
 RAG_RELEVANCE_THRESHOLD = 0.7
 MAX_CODE_RETRIES = 3
+
+# LangSmith tracing (opt-in via env vars)
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "fetcher")
+LANGSMITH_TRACING_ENABLED = bool(LANGSMITH_API_KEY)
+
+# When LANGSMITH_API_KEY is set, configure the required env vars for LangSmith
+if LANGSMITH_TRACING_ENABLED:
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_API_KEY", LANGSMITH_API_KEY)
+    os.environ.setdefault("LANGCHAIN_PROJECT", LANGSMITH_PROJECT)

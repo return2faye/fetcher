@@ -15,14 +15,15 @@
 data-analysis questions from a user, autonomously researches the web, generates code,
 executes it in an isolated sandbox, and verifies the results before returning a final answer.
 
-## Architecture (3 sentences)
+## Architecture (4 sentences)
 
 A **Supervisor graph** decomposes the user query into a plan of typed sub-tasks (research,
 code, hybrid) and routes each task to one of two sub-graphs. The **Corrective RAG (CRAG)
 sub-graph** retrieves from a Qdrant vector DB, LLM-grades relevance, rewrites queries or
 falls back to DuckDuckGo web search, then generates an answer. The **Code sub-graph**
-(not yet built) will generate code, execute it in a Docker sandbox, and self-correct on
-failure.
+generates code, executes it in a Docker sandbox, and self-corrects on failure. A **HITL
+gate** pauses after synthesis for human approval, with options to approve, reject (re-plan),
+or request revisions.
 
 ## Tech stack
 
@@ -46,14 +47,15 @@ failure.
 
 ```
 src/fetcher/
-├── config.py                  # All env vars, model names, constants
+├── config.py                  # All env vars, model names, constants, LangSmith config
 ├── state.py                   # 3 TypedDict schemas: SupervisorState, RAGState, CodeState
+├── cli.py                     # CLI runner with HITL + streaming support
 ├── graphs/
-│   ├── supervisor.py          # Top-level graph: plan → route → sub-graphs → synthesize
+│   ├── supervisor.py          # Top-level graph: plan → route → sub-graphs → HITL → finalize
 │   ├── rag.py                 # CRAG sub-graph: retrieve → grade → decide → generate
 │   └── code.py                # Code sub-graph: coder → executor → critic → retry
 ├── nodes/
-│   ├── supervisor.py          # intake_planner, router, stubs, synthesizer, finalize
+│   ├── supervisor.py          # intake_planner, router, stubs, synthesizer, human_review, revise, finalize
 │   ├── rag.py                 # retrieve, grade_documents, rewrite_query, web_search, generate
 │   ├── code.py                # coder, executor, critic, error_handler
 │   └── integration.py         # Adapters: rag_node, code_node, hybrid_node (real sub-graphs)
@@ -73,7 +75,8 @@ tests/
 ├── test_supervisor.py         # 7 tests (router logic + full graph with stubs)
 ├── test_rag.py                # 9 tests (decide_action + web_search + 3 CRAG paths)
 ├── test_code.py               # 13 tests (helpers + routing + sandbox + integration)
-└── test_integration.py        # 9 tests (end-to-end with real sub-graphs + memory)
+├── test_integration.py        # 9 tests (end-to-end with real sub-graphs + memory)
+└── test_hitl.py               # 9 tests (HITL routing, feedback, interrupt/resume flows)
 ```
 
 ## Current state of development
@@ -85,11 +88,10 @@ tests/
 | 3     | Corrective RAG sub-graph         | Done    |
 | 4     | Code generation & Docker sandbox | Done    |
 | 5     | Integration & memory             | Done    |
-| 6     | HITL, streaming & observability  | **Next** |
-| 6     | HITL, streaming & observability  | Pending |
-| 7     | Hardening & polish               | Pending |
+| 6     | HITL, streaming & observability  | Done    |
+| 7     | Hardening & polish               | **Next** |
 
-**38 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
+**47 tests, all passing.** Run with: `conda activate fetcher && PYTHONPATH=src pytest tests/ -v`
 
 ## How the graphs work
 
@@ -101,8 +103,10 @@ user query → intake_planner (LLM decomposes into [type] tasks)
     → code_subgraph  (if code)     → router (advance index)
     → hybrid         (if hybrid)   → router (advance index)
     → synthesizer    (if done — all tasks complete)
-      → human_review (HITL gate, Phase 6)
-        → finalize → END
+      → human_review (interrupt — waits for user feedback)
+        → "approve"           → finalize → END
+        → "reject:<reason>"   → intake_planner (re-plan)
+        → "<revision notes>"  → revise_synthesis → human_review (loop)
 ```
 
 ### CRAG flow
@@ -125,14 +129,16 @@ task → coder (LLM generates Python)
       - retries exhausted → END (is_verified=False)
 ```
 
-## What to do next (Phase 6)
+## What to do next (Phase 7)
 
-Add human-in-the-loop, streaming, and observability:
-1. Add `interrupt_before` on `human_review` node for HITL approval gate
-2. Implement human feedback handling: approve → finalize, reject → re-route
-3. Token-level streaming via `astream_events` for real-time output
-4. LangSmith tracing configuration (optional, env-var gated)
-5. Build a simple CLI runner (`src/fetcher/cli.py`) to interact with the system
+Hardening and polish:
+1. Error handling and graceful degradation across all nodes
+2. Iteration safety caps enforcement and edge-case testing
+3. Input validation on user queries (length, content)
+4. Timeout handling for LLM calls and Docker execution
+5. Comprehensive end-to-end testing with realistic scenarios
+6. CLI polish: better error messages, `--help` flag, progress indicators
+7. Document ingestion pipeline (chunking strategy for PDFs, web pages)
 
 ## Container management
 

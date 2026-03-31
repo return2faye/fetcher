@@ -219,9 +219,55 @@ tests/test_integration.py           # 9 integration tests
 4. **Best-effort memory** — memory operations silently fail rather than crashing the pipeline. Memory is a quality enhancement, not a critical path.
 5. **Context concatenation** — all research results are joined and passed as code context. Simple and effective; could be improved with selective context later.
 
-### Next Steps (Session 6 — Phase 6: HITL, Streaming & Observability)
-1. Add `interrupt_before` on `human_review` node for human-in-the-loop
-2. Implement token-level streaming via `astream_events`
-3. Add LangSmith tracing configuration
-4. Build human feedback → re-route or approve flow
-5. Create a simple CLI runner to interact with the system
+### Next Steps (Session 6 — Phase 6: HITL, Streaming & Observability) ✅ DONE — see Session 6 below
+
+---
+
+## Session 6 — 2026-03-31
+
+### Status: Phase 6 Complete — HITL, Streaming & Observability
+
+### What was done
+- Implemented HITL gate using LangGraph's `interrupt()` API in `human_review` node
+- Three feedback paths: approve → finalize, reject → re-plan from scratch, revise → re-synthesize with feedback
+- Built `revise_synthesis` node — re-generates answer incorporating human revision instructions
+- Built `route_after_human_review` conditional edge for feedback-based routing
+- Wired conditional edges: `human_review` → {finalize, revise_synthesis, intake_planner}
+- Revision loop: `revise_synthesis` → `human_review` (allows multiple revision rounds)
+- LangSmith tracing: env-var gated in `config.py` — set `LANGSMITH_API_KEY` to enable
+- Token-level streaming via `astream_events` (v2) in CLI runner
+- Built CLI runner (`src/fetcher/cli.py`) with two modes:
+  - `python -m fetcher.cli "query"` — sync mode with HITL prompts
+  - `python -m fetcher.cli --stream "query"` — streaming mode with real-time token output
+- 9 new tests (47 total), all passing:
+  - 4 unit tests for `route_after_human_review` (approve, default, reject, revision)
+  - 1 unit test for `revise_synthesis` (verifies feedback in prompt)
+  - 3 integration tests: approve flow, revision flow (2 interrupt cycles), reject/re-plan flow
+  - 1 LangSmith config test (env-var gating)
+
+### New Files
+```
+src/fetcher/cli.py             # CLI runner with HITL + streaming
+tests/test_hitl.py             # 9 tests for HITL and config
+```
+
+### Modified Files
+```
+src/fetcher/config.py          # Added LangSmith tracing config
+src/fetcher/nodes/supervisor.py # Added interrupt(), revise_synthesis, route_after_human_review
+src/fetcher/graphs/supervisor.py # Conditional edges for HITL, revise_synthesis node
+```
+
+### Key Design Decisions (Session 6)
+1. **`interrupt()` over `interrupt_before`** — LangGraph's `interrupt()` function (called inside the node) is more flexible than `interrupt_before` (graph-level config). It lets us pass context (the answer, plan) to the human and receive structured feedback as the return value.
+2. **Three-way feedback routing** — approve/reject/revise covers all practical HITL scenarios. Reject triggers a full re-plan, which is expensive but appropriate for fundamentally wrong answers. Revise re-synthesizes cheaply from existing sub-results.
+3. **Revision loop** — `revise_synthesis → human_review` allows unlimited revision rounds. The human stays in control until satisfied.
+4. **LangSmith via env-var gating** — no code changes needed to enable tracing. Just set `LANGSMITH_API_KEY`. The `setdefault` calls ensure we don't override user's explicit settings.
+5. **CLI dual mode** — sync mode is simpler and works for debugging. Streaming mode (`--stream`) gives real-time token output for a better UX. Both support HITL interrupt/resume.
+
+### Next Steps (Session 7 — Phase 7: Hardening & Polish)
+1. Error handling and graceful degradation across all nodes
+2. Timeout handling for LLM calls and Docker execution
+3. Input validation on user queries
+4. CLI polish: `--help`, progress indicators, better error messages
+5. Document ingestion pipeline (chunking strategy)
